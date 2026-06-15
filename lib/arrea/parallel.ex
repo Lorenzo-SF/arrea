@@ -1,0 +1,313 @@
+defmodule Arrea.Parallel do
+  @moduledoc """
+  Parallel execution module for commands and functions.
+
+  Provides a high-level API for concurrent execution with worker
+  management, coordination via Leader, and monitoring.
+
+  Shell options (`:shell`, `:shell_config`) and asdf/mise options
+  (`asdf_<language>`, `mise_<language>`) are automatically inherited from
+  `Arrea.Command.resolve_shell/1` and `Arrea.Command.build_full_command/2`,
+  allowing the use of the same custom shell or runtime versions
+  in parallel executions.
+  """
+
+  alias Arrea.{Leader, Monitor}
+
+  @doc """
+  Executes a single command synchronously.
+
+  ## Options
+    - `:timeout` — Timeout in milliseconds (default: 30_000)
+    - `:shell` — Shell to use (default: resolved automatically)
+    - `:shell_config` — Path to shell config file
+    - `:asdf_elixir`, `:asdf_erlang`, etc. — Versions via ASDF (environment variable)
+    - `:mise_node`, `:mise_elixir`, etc. — Versions via `mise exec`
+
+  ## Examples
+
+      iex> Arrea.Parallel.execute("echo hello")
+      {:ok, %{stdout: "hello\\n", stderr: "", exit_code: 0}}
+  """
+  @spec execute(binary(), keyword()) :: {:ok, map()} | {:error, term()}
+  def execute(cmd, opts \\ []) do
+    timeout = Keyword.get(opts, :timeout, 30_000)
+    exec_opts = Keyword.drop(opts, [:timeout])
+
+    task =
+      Task.async(fn ->
+        do_execute(cmd, exec_opts)
+      end)
+
+    Task.await(task, timeout)
+  end
+
+  @doc """
+  Executes multiple commands in parallel via Leader.
+
+  ## Options
+    - `:workers` — Number of parallel workers (default: 4)
+    - `:timeout` — Timeout in milliseconds (default: 30_000)
+
+  ## Examples
+
+      iex> Arrea.Parallel.run(["echo a", "echo b", "echo c"], workers: 2)
+      {:ok, batch_id}
+  """
+  @spec run([binary() | function()], keyword()) ::
+          {:ok, binary()}
+          | {:ok, binary(), map()}
+          | {:error, term()}
+  def run(commands, opts \\ []) do
+    workers = Keyword.get(opts, :workers, 4)
+
+    case Process.whereis(Arrea.Leader) do
+      nil ->
+        {:error, :leader_not_available}
+
+      _pid ->
+        Leader.execute(commands, workers: workers, timeout: Keyword.get(opts, :timeout, 30_000))
+    end
+  end
+
+  @doc """
+  Executes multiple commands and waits for all results synchronously.
+
+  Uses `Task.async_stream/3` with `max_concurrency` for real sliding window:
+  a new task starts as soon as one finishes, without waiting for the whole chunk.
+
+  Supports per-task timeout via tuple-input:
+  - `{command, timeout_ms}` — per-task timeout
+  - `{:tag, command}` — tag the task (tag appears in the result)
+  - `{:tag, command, timeout_ms}` — tag + per-task timeout
+
+  Results are returned in the same order as input commands.
+  When a tag is provided, the result is wrapped as `{:tagged, tag, result}`
+  so callers can identify tasks without relying on position.
+
+  ## Options
+    - `:workers` — Number of parallel workers (default: 4)
+    - `:timeout` — Default timeout per command in ms (default: 30_000)
+    - `:ordered` — Return results in input order (default: true)
+
+  ## Examples
+
+      iex> Arrea.Parallel.run_sync([fn -> 1 end, fn -> 2 end])
+      [{:ok, %{result: 1, exit_code: 0}}, {:ok, %{result: 2, exit_code: 0}}]
+
+      iex> Arrea.Parallel.run_sync([{:vector, fn -> 1 end}, {:bm25, fn -> 2 end}])
+      [{:tagged, :vector, {:ok, %{result: 1, exit_code: 0}}},
+       {:tagged, :bm25, {:ok, %{result: 2, exit_code: 0}}}]
+  """
+  @spec run_sync([binary() | function() | tuple()], keyword()) :: [map()]
+  def run_sync(commands, opts \\ []) do
+    workers = Keyword.get(opts, :workers, 4)
+    default_timeout = Keyword.get(opts, :timeout, 30_000)
+    ordered = Keyword.get(opts, :ordered, true)
+    exec_opts = Keyword.drop(opts, [:workers, :timeout, :ordered])
+
+    commands
+    |> Enum.with_index()
+    |> Task.async_stream(
+      fn {cmd_entry, idx} ->
+        {cmd, tag, timeout} = normalize_command(cmd_entry, idx, default_timeout)
+
+        task = Task.async(fn -> do_execute(cmd, exec_opts) end)
+
+        result =
+          case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
+            {:ok, result} -> result
+            nil -> {:error, %{error: :timeout, exit_code: -1}}
+            {:exit, reason} -> {:error, %{error: reason, exit_code: -1}}
+          end
+
+        {idx, tag, result}
+      end,
+      timeout: :infinity,
+      max_concurrency: workers,
+      ordered: ordered
+    )
+    |> Enum.map(fn
+      {:ok, {idx, tag, result}} -> build_result(idx, tag, result)
+      {:exit, reason} -> {:error, %{error: reason, exit_code: -1}}
+      {:error, reason} -> {:error, %{error: reason, exit_code: -1}}
+    end)
+  end
+
+  @doc false
+  def normalize_command(cmd_entry, idx, default_timeout) when is_tuple(cmd_entry) do
+    case cmd_entry do
+      {tag, cmd, timeout} when is_atom(tag) and is_integer(timeout) ->
+        {cmd, tag, timeout}
+
+      {cmd, timeout} when is_integer(timeout) ->
+        {cmd, idx, timeout}
+
+      {tag, cmd} when is_atom(tag) ->
+        {cmd, tag, default_timeout}
+
+      _ ->
+        {cmd_entry, idx, default_timeout}
+    end
+  end
+
+  def normalize_command(cmd_entry, idx, default_timeout) do
+    {cmd_entry, idx, default_timeout}
+  end
+
+  defp build_result(idx, tag, result) when is_atom(tag) and tag != idx do
+    {:tagged, tag, result}
+  end
+
+  defp build_result(_idx, _tag, result) do
+    result
+  end
+
+  @doc """
+  Subscribes the current process to Monitor updates.
+  """
+  @spec subscribe_monitor() :: :ok
+  def subscribe_monitor do
+    Monitor.subscribe()
+  end
+
+  @doc """
+  Gets the current state of the Monitor.
+  """
+  @spec monitor_state() :: map()
+  def monitor_state do
+    Monitor.get_state()
+  end
+
+  @spec do_execute(binary() | function(), keyword()) :: {:ok, map()} | {:error, map()}
+  defp do_execute(cmd, opts)
+
+  defp do_execute(cmd, opts) when is_binary(cmd) do
+    {:ok, do_execute_cmd(cmd, opts)}
+  end
+
+  defp do_execute(fun, _opts) when is_function(fun, 0) do
+    result = fun.()
+    {:ok, %{result: result, exit_code: 0}}
+  rescue
+    e ->
+      {:error, %{error: e, exit_code: 1}}
+  end
+
+  @doc """
+  Executes multiple commands in parallel returning a stream of individual
+  results as they complete, including the duration of each.
+
+  Each stream element is `{index, {:ok, result} | {:error, reason}}`.
+
+  ## Options
+    - `:workers` — Number of parallel workers (default: 4)
+    - `:timeout` — Timeout per command in milliseconds (default: 30_000)
+  """
+  @spec run_stream([binary() | function()], keyword()) :: Enumerable.t()
+  def run_stream(commands, opts \\ []) do
+    workers = Keyword.get(opts, :workers, 4)
+    timeout = Keyword.get(opts, :timeout, 30_000)
+    exec_opts = Keyword.drop(opts, [:workers, :timeout])
+
+    commands
+    |> Enum.with_index()
+    |> Task.async_stream(
+      fn {cmd, idx} ->
+        task = Task.async(fn -> do_execute(cmd, exec_opts) end)
+
+        case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
+          {:ok, result} -> {idx, result}
+          nil -> {idx, {:error, :timeout}}
+          {:exit, reason} -> {idx, {:error, reason}}
+        end
+      end,
+      timeout: :infinity,
+      max_concurrency: workers,
+      ordered: false
+    )
+    |> Stream.map(fn
+      {:ok, {idx, {:ok, _} = result}} ->
+        {idx, result}
+
+      {:ok, {idx, {:error, _} = err}} ->
+        {idx, err}
+
+      {:exit, reason} ->
+        {:error, reason}
+
+      {:error, reason} ->
+        {:error, reason}
+    end)
+  end
+
+  @doc """
+  Executes multiple commands in parallel returning a list of `{idx, cmd, task}`
+  where each `task` is a `Task` that can be monitored with `Task.yield_many/2`.
+
+  Each task manages its own timeout internally.
+
+  ## Options
+    - `:workers` — Number of parallel workers (default: 4)
+    - `:timeout` — Timeout per command in milliseconds (default: 30_000)
+  """
+  @spec run_tasks([binary()], keyword()) :: [{non_neg_integer(), String.t(), Task.t()}]
+  def run_tasks(commands, opts \\ []) do
+    timeout = Keyword.get(opts, :timeout, 30_000)
+    exec_opts = Keyword.drop(opts, [:timeout])
+
+    commands
+    |> Enum.with_index()
+    |> Enum.map(fn {cmd, idx} ->
+      task =
+        Task.async(fn ->
+          inner = start_execution_task(idx, cmd, exec_opts)
+          wait_for_task_result(inner, idx, timeout)
+        end)
+
+      {idx, cmd, task}
+    end)
+  end
+
+  defp start_execution_task(idx, cmd, exec_opts) do
+    Task.async(fn ->
+      start = System.monotonic_time(:millisecond)
+      result = do_execute(cmd, exec_opts)
+      duration = System.monotonic_time(:millisecond) - start
+      {idx, result, duration}
+    end)
+  end
+
+  defp wait_for_task_result(inner, idx, timeout) do
+    case Task.yield(inner, timeout) || Task.shutdown(inner, :brutal_kill) do
+      {:ok, value} -> value
+      nil -> {idx, {:error, :timeout}, timeout}
+      {:exit, reason} -> {idx, {:error, reason}, 0}
+    end
+  end
+
+  @spec do_execute_cmd(String.t(), keyword()) :: map()
+  defp do_execute_cmd(cmd, opts) when is_binary(cmd) do
+    shell = Arrea.Command.resolve_shell(opts)
+    full_cmd = Arrea.Command.build_full_command(cmd, opts)
+    start = System.monotonic_time(:millisecond)
+
+    try do
+      {output, exit_code} = System.cmd(shell, ["-c", full_cmd], stderr_to_stdout: true)
+      duration = System.monotonic_time(:millisecond) - start
+      %{stdout: output, stderr: "", exit_code: exit_code, duration_ms: duration}
+    rescue
+      error ->
+        case error do
+          %ErlangError{original: :enoent} ->
+            fallback = System.get_env("SHELL") || "sh"
+            {output, exit_code} = System.cmd(fallback, ["-c", full_cmd], stderr_to_stdout: true)
+            duration = System.monotonic_time(:millisecond) - start
+            %{stdout: output, stderr: "", exit_code: exit_code, duration_ms: duration}
+
+          _ ->
+            %{stdout: "Error: #{inspect(error)}", stderr: "", exit_code: -1, duration_ms: 0}
+        end
+    end
+  end
+end

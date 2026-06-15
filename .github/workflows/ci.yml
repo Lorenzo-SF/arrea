@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install OTP & Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "28.1"
+          elixir-version: "1.19.5"
+
+      # Arrea depends on alaja via SSH git URL. Convert to HTTPS for CI.
+      - name: Fix git SSH → HTTPS for dependencies
+        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
+
+      - name: Cache deps
+        uses: actions/cache@v4
+        with:
+          path: deps
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Compile
+        run: mix compile --warnings-as-errors
+
+      - name: Format check
+        run: mix format --check-formatted
+
+      - name: Lint (Credo)
+        run: mix credo --strict
+
+      - name: Run tests
+        run: mix test
