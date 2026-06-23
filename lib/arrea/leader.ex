@@ -34,6 +34,11 @@ defmodule Arrea.Leader do
 
   @max_command_length 65_536
 
+  # Per-shell-command timeout (ms). System.cmd blocks until the shell
+  # exits, so a runaway command (sleep, cat /dev/zero, network call)
+  # would otherwise hang the worker forever.
+  @default_shell_timeout 30_000
+
   @doc """
   Starts the Leader as a GenServer with name `#{__MODULE__}`.
 
@@ -295,7 +300,7 @@ defmodule Arrea.Leader do
   @spec build_task_function(String.t() | function()) :: function()
   defp build_task_function(cmd) when is_binary(cmd) do
     case validate_command(cmd) do
-      :ok -> fn -> execute_shell_cmd(cmd) end
+      :ok -> fn -> execute_shell_cmd(cmd, @default_shell_timeout) end
       {:error, reason} -> fn -> {:error, reason} end
     end
   end
@@ -303,6 +308,25 @@ defmodule Arrea.Leader do
   defp build_task_function(fun) when is_function(fun, 0), do: fun
 
   defp build_task_function(cmd), do: fn -> {:error, {:invalid_command, cmd}} end
+
+  @spec execute_shell_cmd(String.t(), pos_integer()) :: map()
+  defp execute_shell_cmd(cmd, timeout) do
+    shell = Arrea.Command.resolve_shell()
+    task = Task.async(fn ->
+      System.cmd(shell, ["-c", cmd], stderr_to_stdout: true)
+    end)
+
+    case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
+      {:ok, {output, exit_code}} ->
+        %{stdout: output, exit_code: exit_code}
+
+      nil ->
+        %{stdout: "", stderr: "shell command timed out", exit_code: -1, timeout: true}
+
+      {:exit, reason} ->
+        %{stdout: "", stderr: "shell crashed: #{inspect(reason)}", exit_code: -1}
+    end
+  end
 
   @spec validate_command(String.t()) :: :ok | {:error, term()}
   defp validate_command(cmd) do
@@ -314,13 +338,6 @@ defmodule Arrea.Leader do
     else
       {:error, reason} -> {:error, {:validation_failed, reason}}
     end
-  end
-
-  @spec execute_shell_cmd(String.t()) :: map()
-  defp execute_shell_cmd(cmd) do
-    shell = Arrea.Command.resolve_shell()
-    {output, exit_code} = System.cmd(shell, ["-c", cmd], stderr_to_stdout: true)
-    %{stdout: output, exit_code: exit_code}
   end
 
   @spec build_child_spec(term(), function(), pid(), boolean(), map()) :: map()
