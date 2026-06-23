@@ -15,36 +15,22 @@ defmodule Arrea.MonitorTest do
     :ok
   end
 
-  describe "subscription and state" do
-    test "subscribe/0 adds caller to subscribers list" do
-      assert :ok = Monitor.subscribe()
-      state = Monitor.get_state()
-      assert MapSet.member?(state.subscribers, self())
-    end
-
-    test "unsubscribe/0 removes caller from subscribers list" do
-      Monitor.subscribe()
-      assert :ok = Monitor.unsubscribe()
-      state = Monitor.get_state()
-      refute MapSet.member?(state.subscribers, self())
-    end
-
+  describe "state shape" do
     test "get_state/0 returns expected properties" do
       state = Monitor.get_state()
       assert is_map(state.workers)
       assert is_integer(state.total_started)
       assert state.total_started >= 0
+      refute Map.has_key?(state, :subscribers)
     end
   end
 
   describe "worker lifecycle tracking" do
-    test "register_worker/2 updates state and broadcasts" do
-      Monitor.subscribe()
-
+    test "register_worker/2 updates state" do
       assert :ok = Monitor.register_worker(:worker_1, %{task: "test"})
 
-      # Wait for cast
-      assert_receive {:worker_registered, :worker_1}, 500
+      # give GenServer cast time to process
+      :timer.sleep(20)
 
       state = Monitor.get_state()
       assert Map.has_key?(state.workers, :worker_1)
@@ -52,27 +38,23 @@ defmodule Arrea.MonitorTest do
       assert state.total_started == 1
     end
 
-    test "update_worker/2 with 'finished' updates counters" do
+    test "worker_finished/3 with :finished updates counters" do
       Monitor.register_worker(:worker_2, %{})
+      :timer.sleep(20)
 
-      # Now finish it
       assert :ok = Monitor.worker_finished(:worker_2, :finished, 100)
-
-      # give GenServer cast time to process
-      :timer.sleep(50)
+      :timer.sleep(20)
 
       state = Monitor.get_state()
       assert state.total_finished == 1
     end
 
-    test "update_worker/2 with 'error' updates counters" do
+    test "worker_finished/3 with :error updates counters" do
       Monitor.register_worker(:worker_3, %{})
+      :timer.sleep(20)
 
-      # Now error it
       assert :ok = Monitor.worker_finished(:worker_3, :error, 100)
-
-      # give time
-      :timer.sleep(50)
+      :timer.sleep(20)
 
       state = Monitor.get_state()
       assert state.total_errors == 1
@@ -80,6 +62,16 @@ defmodule Arrea.MonitorTest do
 
     test "update_worker/2 on non-existent worker is a no-op gracefully" do
       assert :ok = Monitor.update_worker(:nonexistent_worker, %{status: :error})
+    end
+  end
+
+  describe "get_stats/0" do
+    test "returns the expected shape" do
+      {:ok, stats} = Monitor.get_stats()
+      assert is_integer(stats.total_workers)
+      assert is_integer(stats.active_workers)
+      assert is_integer(stats.completed_tasks)
+      assert is_integer(stats.failed_tasks)
     end
   end
 end
