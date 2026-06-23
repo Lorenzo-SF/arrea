@@ -1,11 +1,11 @@
 defmodule Arrea.Supervisor do
   @moduledoc """
-  Supervisor raíz para la capa Engine de Arrea.
+  Root supervisor for the Arrea engine layer.
 
-  ## Estrategia: `:rest_for_one`
+  ## Strategy: `:rest_for_one`
 
-  Los hijos se ordenan por dependencia: cada proceso depende de los anteriores,
-  y solo los procesos dependientes se reinician cuando uno falla.
+  Children are ordered by dependency: each process depends on the
+  previous ones, and only the dependent processes are restarted when one fails.
 
       1. Registry (Arrea.Registry)              — Workers
       2. Registry (Arrea.CircuitBreaker.Registry) — Circuit breakers

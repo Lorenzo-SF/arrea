@@ -1,46 +1,49 @@
 defmodule Arrea.Command do
   @moduledoc """
-  Ejecución síncrona de comandos con soporte para gestión de versiones.
+  Synchronous command execution with version manager support.
 
-  Proporciona una interfaz limpia para ejecutar comandos shell con validación,
-  selección de shell, detección automática de archivos de configuración,
-  integración con asdf/mise y parseo estructurado de resultados.
+  Provides a clean interface to run shell commands with validation,
+  shell selection, automatic detection of configuration files,
+  asdf/mise integration, and structured result parsing.
 
-  Para ejecución en paralelo, usar `Arrea.Parallel` o `Arrea.Leader`.
+  For parallel execution, use `Arrea.Parallel` or `Arrea.Leader`.
 
-  ## Resolución de shell
+  ## Shell resolution
 
-  El shell se resuelve con la siguiente prioridad (de menor a mayor):
-  1. `Arrea.Config.get(:shell)` — config del proyecto consumidor o runtime
-  2. Variable de entorno `$SHELL`
-  3. Login shell del usuario actual (`/etc/passwd`)
-  4. Opción `:shell` pasada a `execute/2` — **máxima prioridad**
-  5. `"sh"` como último recurso si ninguno de los anteriores es válido
+  The shell is resolved with the following priority (lowest to highest):
+  1. `Arrea.Config.get(:shell)` — consumer project or runtime config
+  2. `$SHELL` environment variable
+  3. Current user login shell (`/etc/passwd`)
+  4. `:shell` option passed to `execute/2` — **highest priority**
+  5. `"sh"` as a last resort if none of the above is valid
 
-  Se aceptan tanto nombres (`"zsh"`) como rutas (`"/bin/zsh"`).
-  Los nombres se resuelven a rutas mediante `System.find_executable/1`.
-  Si el shell configurado no existe, cae al default del sistema (`$SHELL` o `"sh"`).
+  Both names (`"zsh"`) and paths (`"/bin/zsh"`) are accepted.
+  Names are resolved to paths via `System.find_executable/1`.
+  If the configured shell does not exist, it falls back to the system
+  default (`$SHELL` or `"sh"`).
 
-  Según el shell detectado, se fuerza la carga de su archivo de configuración
-  (ej: `~/.bashrc` para bash, `~/.zshrc` para zsh, `~/.config/fish/config.fish` para fish).
+  Based on the detected shell, its configuration file is forced to load
+  (e.g. `~/.bashrc` for bash, `~/.zshrc` for zsh, `~/.config/fish/config.fish` for fish).
 
-  ## Timeout real
+  ## Real timeout
 
-  El timeout se aplica **durante** la ejecución: si el comando no termina
-  en `timeout` ms, el proceso de ejecución es cancelado. El proceso OS subyacente
-  recibe SIGKILL cuando el puerto de Erlang es cerrado al morir el proceso propietario.
+  The timeout is enforced **during** execution: if the command does not
+  finish within `timeout` ms, the execution process is cancelled. The
+  underlying OS process receives SIGKILL when the Erlang port is closed
+  as its owner dies.
 
-  ## Gestión de versiones asdf/mise
+  ## asdf/mise version management
 
-  Se pueden forzar versiones de runtimes mediante dos mecanismos:
+  Runtime versions can be forced via two mechanisms:
 
-  * **asdf** — opción `asdf_<lenguaje>`: genera `export ASDF_<LANG>_VERSION=<version>`
-    antes del comando. Funciona tanto con asdf como con mise.
+  * **asdf** — `asdf_<language>` option: emits
+    `export ASDF_<LANG>_VERSION=<version>` before the command. Works
+    with both asdf and mise.
 
-  * **mise** — opción `mise_<lenguaje>`: envuelve el comando con
-    `mise exec <lenguaje>@<version> -- <comando>`.
+  * **mise** — `mise_<language>` option: wraps the command with
+    `mise exec <language>@<version> -- <command>`.
 
-  ## Ejemplos
+  ## Examples
 
       iex> Arrea.Command.execute("echo hello")
       {:ok, %{stdout: "hello\\n", exit_code: 0, duration_ms: 3}}
@@ -75,11 +78,11 @@ defmodule Arrea.Command do
   }
 
   @doc """
-  Resuelve el nombre de un shell a su ruta absoluta.
+  Resolves a shell name to its absolute path.
 
-  Si ya es una ruta (contiene `/`), se devuelve tal cual si existe.
-  Si es solo un nombre, se busca en PATH via `System.find_executable/1`.
-  Retorna `nil` si no se encuentra el ejecutable.
+  If it is already a path (contains `/`), it is returned as-is if it exists.
+  If it is just a name, it is looked up in PATH via `System.find_executable/1`.
+  Returns `nil` if the executable cannot be found.
   """
   @spec resolve_shell_path(String.t()) :: String.t() | nil
   def resolve_shell_path(shell) do
@@ -91,15 +94,15 @@ defmodule Arrea.Command do
   end
 
   @doc """
-  Resuelve el shell a usar según la prioridad (de menor a mayor):
-  1. `Arrea.Config.get(:shell)` (config del proyecto o `Config.set/2`)
-  2. Variable de entorno `$SHELL`
-  3. Login shell del usuario en `/etc/passwd`
-  4. Opción `:shell` pasada en opts — máxima prioridad
-  5. `"sh"` como fallback si ninguno es válido
+  Resolves the shell to use, by priority (lowest to highest):
+  1. `Arrea.Config.get(:shell)` (project config or `Config.set/2`)
+  2. `$SHELL` environment variable
+  3. User login shell in `/etc/passwd`
+  4. `:shell` option passed in `opts` — highest priority
+  5. `"sh"` as a fallback if none is valid
 
-  Si el shell resuelto es un nombre (ej: `"zsh"`), lo busca en PATH.
-  Si no se encuentra, cae al default del sistema.
+  If the resolved shell is a name (e.g. `"zsh"`), it is looked up in PATH.
+  If not found, it falls back to the system default.
   """
   @spec resolve_shell(keyword()) :: String.t()
   def resolve_shell(opts \\ []) do
@@ -116,10 +119,10 @@ defmodule Arrea.Command do
   end
 
   @doc """
-  Resuelve la ruta al archivo de configuración del shell.
+  Resolves the path to the shell configuration file.
 
-  Retorna la ruta expandida al archivo de config (ej: `~/.zshrc` para zsh)
-  o `nil` si el shell no tiene un archivo de config conocido.
+  Returns the expanded path to the config file (e.g. `~/.zshrc` for zsh)
+  or `nil` if the shell has no known config file.
   """
   @spec resolve_shell_config(String.t()) :: String.t() | nil
   def resolve_shell_config(shell) do
@@ -132,31 +135,31 @@ defmodule Arrea.Command do
   end
 
   @doc """
-  Ejecuta una cadena de comando de forma síncrona con configuración opcional.
+  Executes a command string synchronously with optional configuration.
 
-  El comando se valida antes de la ejecución. Comandos inválidos o peligrosos
-  retornan `{:error, razon}` sin ejecutar nada.
+  The command is validated before execution. Invalid or dangerous commands
+  return `{:error, reason}` without executing anything.
 
-  El timeout es **real**: si el comando no termina dentro del límite,
-  el proceso de ejecución es cancelado activamente (no post-hoc).
+  The timeout is **real**: if the command does not finish within the
+  limit, the execution process is actively cancelled (not post-hoc).
 
-  ## Opciones
+  ## Options
 
-  - `:timeout` — Tiempo máximo de ejecución en ms (default: `30_000`)
-  - `:cd` — Directorio de trabajo (default: directorio actual)
-  - `:shell` — Shell a usar — tiene prioridad máxima sobre config y env
-  - `:shell_config` — Ruta al archivo de configuración del shell a cargar (opcional)
-  - `:env` — Variables de entorno adicionales como mapa (opcional)
-  - `:quiet` — Si es true, suprime la captura de stderr (default: false)
-  - `:asdf_elixir` — Forzar versión de Elixir via asdf/mise
-  - `asdf_<lang>` — Forzar versión de cualquier lenguaje via asdf/mise
-  - `mise_<lang>` — Forzar versión via `mise exec`
+  - `:timeout` — Maximum execution time in ms (default: `30_000`)
+  - `:cd` — Working directory (default: current directory)
+  - `:shell` — Shell to use — takes highest priority over config and env
+  - `:shell_config` — Path to the shell configuration file to load (optional)
+  - `:env` — Additional environment variables as a map (optional)
+  - `:quiet` — If true, suppress stderr capture (default: false)
+  - `:asdf_elixir` — Force Elixir version via asdf/mise
+  - `asdf_<lang>` — Force any language version via asdf/mise
+  - `mise_<lang>` — Force version via `mise exec`
 
-  ## Retorna
+  ## Returns
 
-  - `{:ok, result}` — Mapa con `:stdout`, `:exit_code`, `:duration_ms`
-  - `{:error, :timeout}` — El comando fue cancelado por exceder el timeout
-  - `{:error, reason}` — Error de validación o ejecución
+  - `{:ok, result}` — Map with `:stdout`, `:exit_code`, `:duration_ms`
+  - `{:error, :timeout}` — The command was cancelled for exceeding the timeout
+  - `{:error, reason}` — Validation or execution error
   """
   @spec execute(String.t(), keyword()) :: {:ok, result()} | {:error, term()}
   def execute(cmd, opts \\ []) do
@@ -173,11 +176,11 @@ defmodule Arrea.Command do
   end
 
   @doc """
-  Ejecuta un comando con una versión de lenguaje gestionada por ASDF.
+  Executes a command with a language version managed by ASDF.
 
-  Envoltorio conveniente para `execute/2` que antepone la activación del shim de asdf.
+  Convenience wrapper around `execute/2` that prepends the asdf shim activation.
 
-  ## Ejemplos
+  ## Examples
 
       iex> Command.execute_with_asdf("mix test", :elixir, "1.18.0")
       {:ok, %{stdout: "...", exit_code: 0, duration_ms: 1200}}
@@ -190,15 +193,15 @@ defmodule Arrea.Command do
   end
 
   @doc """
-  Parsea un mapa de resultado crudo a una forma estructurada.
+  Parses a raw result map into a structured form.
 
-  Detecta patrones comunes de error y retorna resultados etiquetados.
+  Detects common error patterns and returns tagged results.
   """
   @spec parse_result(result()) :: {:ok, result()} | {:error, {:exit_code, non_neg_integer()}}
   def parse_result(%{exit_code: 0} = result), do: {:ok, result}
   def parse_result(%{exit_code: code} = _result), do: {:error, {:exit_code, code}}
 
-  # ── Ejecución interna ─────────────────────────────────────────────────────
+  # ── Internal execution ─────────────────────────────────────────────────────
 
   # Lanza el comando en un Task y aplica timeout real con Task.yield/2.
   # Si el timeout expira, Task.shutdown/2 con :brutal_kill mata el proceso Elixir.
@@ -263,7 +266,7 @@ defmodule Arrea.Command do
       end
   end
 
-  # ── Construcción del comando ──────────────────────────────────────────────
+  # ── Command construction ──────────────────────────────────────────────
 
   @doc false
   @spec build_full_command(String.t(), keyword()) :: String.t()

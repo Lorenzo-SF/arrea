@@ -162,13 +162,13 @@ defmodule Arrea.Validation.Rules do
   end
 
   @doc """
-  Retorna la lista de patrones de comandos peligrosos bloqueados por `safe_command/1`.
+  Returns la lista de patrones de comandos peligrosos bloqueados por `safe_command/1`.
   """
   @spec dangerous_commands() :: [String.t()]
   def dangerous_commands, do: @dangerous_commands
 
   @doc """
-  Retorna la lista de nombres de shells permitidos.
+  Returns la lista de nombres de shells permitidos.
   """
   @spec allowed_shells() :: [String.t()]
   def allowed_shells, do: @allowed_shells
