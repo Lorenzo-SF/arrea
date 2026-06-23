@@ -1,7 +1,7 @@
 defmodule Arrea.Parallel do
   @moduledoc false
 
-  alias Arrea.{Leader, Monitor}
+  alias Arrea.Leader
 
   @doc """
   Executes a single command synchronously.
@@ -150,22 +150,6 @@ defmodule Arrea.Parallel do
 
   defp build_result(_idx, _tag, result) do
     result
-  end
-
-  @doc """
-  Subscribes the current process to Monitor updates.
-  """
-  @spec subscribe_monitor() :: :ok
-  def subscribe_monitor do
-    Monitor.subscribe()
-  end
-
-  @doc """
-  Gets the current state of the Monitor.
-  """
-  @spec monitor_state() :: map()
-  def monitor_state do
-    Monitor.get_state()
   end
 
   @spec do_execute(binary() | function(), keyword()) :: {:ok, map()} | {:error, map()}
