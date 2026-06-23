@@ -1,39 +1,39 @@
 defmodule Arrea.CircuitBreaker do
   @moduledoc """
-  Circuit Breaker para protección del sistema.
+  Circuit Breaker for system protection.
 
-  Implementa el patrón Circuit Breaker con tres estados:
+  Implements the Circuit Breaker pattern with three states:
 
-  - `:closed` — Operación normal; las llamadas se ejecutan directamente.
-  - `:open` — Las llamadas se bloquean inmediatamente tras exceder el umbral
-    de fallos consecutivos.
-  - `:half_open` — Estado de prueba tras el timeout de recuperación. Se permite
-    una llamada para verificar si el sistema se ha recuperado.
+  - `:closed` — Normal operation; calls are executed directly.
+  - `:open` — Calls are blocked immediately after exceeding the
+    consecutive failures threshold.
+  - `:half_open` — Probe state after the recovery timeout. A single
+    call is allowed to verify whether the system has recovered.
 
-  ## Decisión atómica
+  ## Atomic decision
 
-  La decisión de permitir o bloquear la ejecución se toma de forma atómica
-  dentro del GenServer (`get_state_and_check`), eliminando la race condition
-  entre leer el estado y ejecutar la función.
+  The decision to allow or block execution is taken atomically inside
+  the GenServer (`get_state_and_check`), eliminating the race condition
+  between reading the state and executing the function.
 
-  ## Cierre desde half_open
+  ## Closing from half_open
 
-  En estado `:half_open` se requieren `max(1, threshold / 2)` éxitos
-  **consecutivos** para cerrar el circuito, mitigando el riesgo de cierre
-  prematuro ante llamadas concurrentes.
+  In `:half_open` state, `max(1, threshold / 2)` **consecutive** successes
+  are required to close the circuit, mitigating the risk of premature
+  closure under concurrent calls.
 
-  Un fallo en `:half_open` resetea el contador de éxitos acumulados al
-  volver a `:open`, garantizando que el próximo intento de recuperación
-  parta desde cero.
+  A failure in `:half_open` resets the accumulated success counter on
+  the way back to `:open`, guaranteeing that the next recovery attempt
+  starts from zero.
 
-  ## Tiempo de timeout
+  ## Timeout measurement
 
-  Se usa `System.monotonic_time/1` para calcular el intervalo desde el último
-  fallo, inmune a ajustes de reloj del sistema (NTP, cambios manuales, etc.).
+  `System.monotonic_time/1` is used to compute the interval since the
+  last failure, immune to system clock adjustments (NTP, manual changes, etc.).
 
-  ## Registro
+  ## Registry
 
-  Cada breaker se registra via `Registry` con nombre único bajo
+  Each breaker is registered through `Registry` with a unique name under
   `Arrea.CircuitBreaker.Registry`.
   """
 
@@ -43,14 +43,14 @@ defmodule Arrea.CircuitBreaker do
   @type state :: :closed | :open | :half_open
 
   @doc """
-  Inicia un circuit breaker con nombre único (requerido en `opts`).
+  Starts a circuit breaker with a unique name (required in `opts`).
 
-  ## Opciones
+  ## Options
 
-    - `:name` — Nombre único del breaker (requerido)
-    - `:id` — Alias de `:name` aceptado por conveniencia
-    - `:threshold` — Número de fallos consecutivos para abrir el circuito (default: 5)
-    - `:timeout` — Tiempo en ms antes de pasar a `:half_open` (default: 60_000)
+    - `:name` — Unique breaker name (required)
+    - `:id` — Alias of `:name`, accepted for convenience
+    - `:threshold` — Number of consecutive failures to open the circuit (default: 5)
+    - `:timeout` — Time in ms before transitioning to `:half_open` (default: 60_000)
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
@@ -59,15 +59,15 @@ defmodule Arrea.CircuitBreaker do
   end
 
   @doc """
-  Ejecuta una función protegida por el circuit breaker.
+  Executes a function protected by the circuit breaker.
 
-  - Si el circuito está **cerrado** o en **half_open**: ejecuta la función.
-  - Si el circuito está **abierto** y el timeout no ha expirado: retorna
-    `{:error, :circuit_open}` sin ejecutar nada.
-  - Si el breaker no está registrado: ejecuta la función directamente
-    (comportamiento equivalente a circuito cerrado).
+  - If the circuit is **closed** or **half_open**: the function is executed.
+  - If the circuit is **open** and the timeout has not elapsed: returns
+    `{:error, :circuit_open}` without executing anything.
+  - If the breaker is not registered: the function is executed directly
+    (behaviour equivalent to a closed circuit).
 
-  ## Ejemplos
+  ## Examples
 
       iex> CircuitBreaker.call(:my_breaker, fn -> :ok end)
       {:ok, :ok}
@@ -98,9 +98,9 @@ defmodule Arrea.CircuitBreaker do
   end
 
   @doc """
-  Obtiene el estado actual del circuit breaker (`:closed`, `:open`, `:half_open`).
+  Returns the current state of the circuit breaker (`:closed`, `:open`, `:half_open`).
 
-  Retorna `:closed` si el breaker no está registrado.
+  Returns `:closed` if the breaker is not registered.
   """
   @spec get_state(atom()) :: state()
   def get_state(name) do
@@ -111,13 +111,13 @@ defmodule Arrea.CircuitBreaker do
   end
 
   @doc """
-  Notifica una ejecución exitosa al circuit breaker.
+  Notifies the circuit breaker of a successful execution.
   """
   @spec success(atom()) :: :ok
   def success(name), do: GenServer.cast(via_tuple(name), :success)
 
   @doc """
-  Notifica un fallo de ejecución al circuit breaker.
+  Notifies the circuit breaker of an execution failure.
   """
   @spec failure(atom()) :: :ok
   def failure(name), do: GenServer.cast(via_tuple(name), :failure)
@@ -198,7 +198,7 @@ defmodule Arrea.CircuitBreaker do
       cond do
         # En half_open cualquier fallo vuelve a abrir.
         # Se resetean también los éxitos acumulados para que el próximo
-        # intento de recuperación parta desde cero.
+        # attempt starts from zero.
         state.state == :half_open ->
           %{state | state: :open, failures: new_failures, successes: 0, last_failure_at: now_ms}
 
