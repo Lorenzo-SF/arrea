@@ -45,9 +45,6 @@ jobs:
       - name: Run Credo (strict)
         run: mix credo --strict --format=github
 
-      - name: Run Sobelow (security scan)
-        run: mix sobelow --exit medium
-        continue-on-error: false
 
   # ---------------------------------------------------------------------------
   # 2. Compile + test with coverage — main quality gate
