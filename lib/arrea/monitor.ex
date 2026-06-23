@@ -16,7 +16,7 @@ defmodule Arrea.Monitor do
   alias Arrea.Subscribers
 
   @doc """
-  Inicia el Monitor como GenServer con nombre `#{__MODULE__}`.
+  Starts the Monitor as a GenServer with name `#{__MODULE__}`.
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
@@ -73,7 +73,7 @@ defmodule Arrea.Monitor do
     GenServer.call(__MODULE__, :get_state)
   end
 
-  @doc "Obtiene estadisticas resumidas del Engine."
+  @doc "Returns summarised Engine statistics."
   @spec get_stats() :: {:ok, map()}
   def get_stats do
     GenServer.call(__MODULE__, :get_stats)
