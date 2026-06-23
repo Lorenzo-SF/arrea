@@ -7,10 +7,10 @@ defmodule Arrea.CircuitBreaker.State do
           successes: non_neg_integer(),
           threshold: pos_integer(),
           timeout: pos_integer(),
-          # Timestamp en milisegundos monotónicos (System.monotonic_time(:millisecond)).
-          # Nil mientras el circuito está cerrado o nunca ha fallado.
-          # Se usa tiempo monotónico para que ajustes de reloj del sistema (NTP, etc.)
-          # no afecten al cálculo del timeout de recuperación.
+          # Timestamp in monotonic milliseconds (System.monotonic_time(:millisecond)).
+          # Nil while the circuit is closed or it has never failed.
+          # Monotonic time is used so that system clock adjustments (NTP, etc.)
+          # do not affect the recovery timeout calculation.
           last_failure_at: integer() | nil
         }
 

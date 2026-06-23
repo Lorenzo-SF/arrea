@@ -1,51 +1,51 @@
 defmodule Arrea do
   @moduledoc """
-  Fachada principal del orquestador `Arrea`.
+  Main facade of the `Arrea` orchestrator.
 
-  Responsable de:
-  - Ejecución paralela de tareas y comandos
-  - Gestión de workers vía `Arrea.Leader`
-  - Tolerancia a fallos con `Arrea.CircuitBreaker`
-  - Reporte de estado vía `Arrea.Monitor`
+  Responsible for:
+  - Parallel execution of tasks and commands
+  - Worker management via `Arrea.Leader`
+  - Fault tolerance with `Arrea.CircuitBreaker`
+  - Status reporting via `Arrea.Monitor`
 
-  ## Arquitectura
+  ## Architecture
 
       ┌─────────────────────────────────────────────────────────┐
       │                      Arrea                              │
-      │                    (Fachada)                             │
+      │                    (Facade)                             │
       └─────────────────────────┬───────────────────────────────┘
                                │
       ┌────────────────────────▼───────────────────────────────┐
       │              Arrea.Leader (GenServer)                   │
-      │         Coordina ejecución, gestiona workers           │
-      │         Emite eventos {:leader_event, event}           │
+      │         Coordinates execution, manages workers           │
+      │         Emits {:leader_event, event} events           │
       └─────────────────────────┬───────────────────────────────┘
                                │
       ┌────────────────────────▼───────────────────────────────┐
       │       Arrea.WorkerSupervisor (DynamicSupervisor)       │
-      │              Workers efímeros                          │
+      │              Ephemeral workers                          │
       └─────────────────────────┬───────────────────────────────┘
                                │
       ┌────────────────────────▼───────────────────────────────┐
       │              Arrea.Worker (GenServer)                  │
-      │              Ejecuta tareas individuales                │
+      │              Executes individual tasks                │
       └─────────────────────────────────────────────────────────┘
 
-      Arrea.Monitor — Estadísticas del ciclo de vida de workers
-      Arrea.CircuitBreaker — Tolerancia a fallos
+      Arrea.Monitor — Worker lifecycle statistics
+      Arrea.CircuitBreaker — Fault tolerance
 
-  El árbol de supervisión arranca automáticamente al incluir Arrea como
+  The supervision tree starts automatically when including Arrea as a
   dependencia. No es necesario arrancar `Arrea.Supervisor` manualmente.
 
-  ## Uso rápido
+  ## Quick start
 
-      # Ejecución simple
+      # Simple execution
       {:ok, result} = Arrea.execute(fn -> :ok end)
 
-      # Ejecución paralela
+      # Parallel execution
       {:ok, results} = Arrea.run([fn -> 1 end, fn -> 2 end], workers: 4)
 
-      # Suscripción a eventos del Leader
+      # Subscribing to Leader events
       :ok = Arrea.subscribe()
 
       receive do
@@ -78,22 +78,22 @@ defmodule Arrea do
   def max_workers, do: Config.get(:max_workers, 100)
 
   @doc """
-  Ejecuta un comando único de forma síncrona.
+  Executes un comando único de forma síncrona.
 
   ## Parámetros
 
-    * `cmd` — Un binary (comando shell) o una función sin argumentos
+    * `cmd` — A binary (shell command) or a zero-arity function
     * `opts` — Opciones adicionales:
       - `:timeout` — Timeout en ms (por defecto `30_000`). Timeout real: cancela la ejecución.
       - `:retry` — Si se debe reintentar en caso de fallo
       - `:shell` — Shell a usar (máxima prioridad sobre config y entorno)
 
-  ## Retorna
+  ## Returns
 
     * `{:ok, Arrea.Result.t()}` — Éxito con resultado
     * `{:error, Arrea.Error.t()}` — Error con código y mensaje
 
-  ## Ejemplos
+  ## Examples
 
       iex> Arrea.execute("echo hello")
       {:ok, %Arrea.Result{success: true, data: %{stdout: "hello\\n", ...}, failures: []}}
@@ -146,7 +146,7 @@ defmodule Arrea do
   end
 
   @doc """
-  Ejecuta múltiples comandos en paralelo.
+  Executes múltiples comandos en paralelo.
 
   ## Parámetros
 
@@ -155,7 +155,7 @@ defmodule Arrea do
       - `:workers` — Número máximo de workers paralelos (por defecto `max_workers()`)
       - `:timeout` — Timeout total en ms
 
-  ## Retorna
+  ## Returns
 
     * `{:ok, Arrea.Result.t()}` — Con `batch_id` para correlacionar eventos
     * `{:error, Arrea.Error.t()}` — Si todos fallaron o no hay workers disponibles
@@ -241,7 +241,7 @@ defmodule Arrea do
   end
 
   @doc """
-  Cancela la suscripción del proceso actual a los eventos del Leader.
+  Cancels the subscription of the current process to Leader events.
 
   ## Ejemplo
 
@@ -253,9 +253,9 @@ defmodule Arrea do
   end
 
   @doc """
-  Obtiene las estadísticas actuales del Engine.
+  Returns the current statistics of the Engine.
 
-  Las estadísticas las provee `Arrea.Monitor`, que trackea el ciclo de vida
+  The statistics are provided by `Arrea.Monitor`, which tracks the lifecycle
   de todos los workers arrancados bajo el Leader.
 
   ## Ejemplo

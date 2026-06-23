@@ -1,35 +1,35 @@
 defmodule Arrea.Config do
   @moduledoc """
-  Configuración del engine `Arrea`.
+  Configuration for the `Arrea` engine.
 
-  ## Prioridad de configuración
+  ## Configuration priority
 
-  ### Arrea como librería (de menor a mayor prioridad)
+  ### Arrea as a library (lowest to highest priority)
 
-  1. **`@default`** — Valores baseline compilados en este módulo. Siempre presentes.
-  2. **`config :arrea, :engine, [...]`** en el `config.exs` del proyecto consumidor —
-     sobreescribe los defaults en tiempo de compilación a través del Application env de OTP.
-  3. **`Arrea.Config.set/2`** en tiempo de ejecución — persiste en la sesión actual de la VM
-     mediante `Application.put_env`. Sobreescribe la config estática.
-  4. **Opts pasadas directamente a las funciones** (`execute/2`, `run/2`, etc.) —
-     prioridad máxima. Los llamadores deben comprobar opts antes de recurrir a `Config.get/2`.
+  1. **`@default`** — Baseline values compiled in this module. Always present.
+  2. **`config :arrea, :engine, [...]`** in the consumer project's `config.exs` —
+     overrides the defaults at compile time through OTP's Application env.
+  3. **`Arrea.Config.set/2`** at runtime — persists in the current VM session
+     via `Application.put_env`. Overrides static config.
+  4. **Options passed directly to the functions** (`execute/2`, `run/2`, etc.) —
+     highest priority. Callers should check opts before falling back to `Config.get/2`.
 
-  > #### Nota sobre "config propia de Arrea" {: .info}
+  > #### Note on "Arrea's own config" {: .info}
   >
-  > Como librería Elixir/OTP, Arrea no puede tener ficheros de config propios
-  > que tengan más prioridad que el proyecto consumidor — es el proyecto consumidor
-  > quien siempre gana en la jerarquía de Application env. El `@default` de este
-  > módulo es la única configuración "propia" de Arrea, y actúa como baseline.
+  > As an Elixir/OTP library, Arrea cannot have its own config files with
+  > higher priority than the consumer project — the consumer project always
+  > wins in the Application env hierarchy. The `@default` in this module
+  > is the only "own" Arrea configuration, and it acts as a baseline.
 
-  ### Arrea como CLI (de menor a mayor prioridad)
+  ### Arrea as a CLI (lowest to highest priority)
 
-  1. **`@default`** — Valores baseline del binario.
-  2. **Application env** (si Arrea se usa en contexto mix).
-  3. **`arrea config set KEY VALUE`** — Config de sesión. Persiste mientras vive el proceso
-     del binario. Usa el mismo mecanismo que `Config.set/2`.
-  4. **Args de CLI** — Máxima prioridad. Se aplican solo a la invocación actual.
+  1. **`@default`** — Baseline values of the binary.
+  2. **Application env** (if Arrea is used in a mix context).
+  3. **`arrea config set KEY VALUE`** — Session config. Persists for the lifetime
+     of the binary process. Uses the same mechanism as `Config.set/2`.
+  4. **CLI args** — Highest priority. Applied to the current invocation only.
 
-  ## Ejemplo en `config.exs`
+  ## Example in `config.exs`
 
   Acepta tanto keyword list como mapa:
 
@@ -43,7 +43,7 @@ defmodule Arrea.Config do
   config :arrea, :engine, %{max_workers: 200, circuit_breaker_threshold: 10}
   ```
 
-  ## Uso en tiempo de ejecución
+  ## Runtime usage
 
   ```elixir
   Arrea.Config.get(:max_workers)        # => 100 (default)
@@ -75,16 +75,16 @@ defmodule Arrea.Config do
   }
 
   @doc """
-  Obtiene un valor de configuración del engine.
+  Returns a configuration value from the engine.
 
-  Resolución (de menor a mayor prioridad):
-  1. `@default` del módulo
-  2. Application env (`config.exs` del consumidor o `Config.set/2` en runtime)
+  Resolution (lowest to highest priority):
+  1. `@default` of the module
+  2. Application env (consumer's `config.exs` or `Config.set/2` at runtime)
 
-  Los opts de función tienen prioridad sobre este valor y deben comprobarse
-  primero en el llamador antes de recurrir a `Config.get/2`.
+  Function opts take priority over this value and should be checked
+  first in the caller before falling back to `Config.get/2`.
 
-  ## Ejemplos
+  ## Examples
 
       iex> Arrea.Config.get(:max_workers)
       100
@@ -103,11 +103,11 @@ defmodule Arrea.Config do
   end
 
   @doc """
-  Obtiene todos los valores de configuración del engine, fusionando los
-  defaults con los valores del Application env.
+  Returns all engine configuration values, merging the defaults with the
+  Application env values.
 
-  El resultado refleja la configuración efectiva actual, incluyendo
-  sobreescrituras de `config.exs` y cambios aplicados con `Config.set/2`.
+  The result reflects the current effective configuration, including
+  `config.exs` overrides and any changes applied with `Config.set/2`.
   """
   @spec all() :: map()
   def all do
@@ -116,7 +116,7 @@ defmodule Arrea.Config do
   end
 
   @doc """
-  Establece un valor de configuración en memoria para la sesión actual.
+  Sets a configuration value in memory for the current session.
 
   Los cambios persisten mientras viva el proceso de la VM. Para cambios
   permanentes, usar `config.exs` del proyecto consumidor.
@@ -125,7 +125,7 @@ defmodule Arrea.Config do
   se mantienen mientras el proceso del binario esté activo, pero no
   sobreviven a reinicios.
 
-  ## Ejemplos
+  ## Examples
 
       iex> Arrea.Config.set(:max_workers, 50)
       :ok
