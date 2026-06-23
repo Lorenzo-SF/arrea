@@ -1,51 +1,51 @@
 defmodule Arrea do
   @moduledoc """
-  Fachada principal del orquestador `Arrea`.
+  Main facade of the `Arrea` orchestrator.
 
-  Responsable de:
-  - Ejecución paralela de tareas y comandos
-  - Gestión de workers vía `Arrea.Leader`
-  - Tolerancia a fallos con `Arrea.CircuitBreaker`
-  - Reporte de estado vía `Arrea.Monitor`
+  Responsible for:
+  - Parallel execution of tasks and commands
+  - Worker management via `Arrea.Leader`
+  - Fault tolerance with `Arrea.CircuitBreaker`
+  - Status reporting via `Arrea.Monitor`
 
-  ## Arquitectura
+  ## Architecture
 
       ┌─────────────────────────────────────────────────────────┐
       │                      Arrea                              │
-      │                    (Fachada)                             │
+      │                    (Facade)                             │
       └─────────────────────────┬───────────────────────────────┘
                                │
       ┌────────────────────────▼───────────────────────────────┐
       │              Arrea.Leader (GenServer)                   │
-      │         Coordina ejecución, gestiona workers           │
-      │         Emite eventos {:leader_event, event}           │
+      │         Coordinates execution, manages workers           │
+      │         Emits {:leader_event, event} events           │
       └─────────────────────────┬───────────────────────────────┘
                                │
       ┌────────────────────────▼───────────────────────────────┐
       │       Arrea.WorkerSupervisor (DynamicSupervisor)       │
-      │              Workers efímeros                          │
+      │              Ephemeral workers                          │
       └─────────────────────────┬───────────────────────────────┘
                                │
       ┌────────────────────────▼───────────────────────────────┐
       │              Arrea.Worker (GenServer)                  │
-      │              Ejecuta tareas individuales                │
+      │              Executes individual tasks                │
       └─────────────────────────────────────────────────────────┘
 
-      Arrea.Monitor — Estadísticas del ciclo de vida de workers
-      Arrea.CircuitBreaker — Tolerancia a fallos
+      Arrea.Monitor — Worker lifecycle statistics
+      Arrea.CircuitBreaker — Fault tolerance
 
-  El árbol de supervisión arranca automáticamente al incluir Arrea como
-  dependencia. No es necesario arrancar `Arrea.Supervisor` manualmente.
+  The supervision tree starts automatically when including Arrea as a
+  dependency. There is no need to start `Arrea.Supervisor` manually.
 
-  ## Uso rápido
+  ## Quick start
 
-      # Ejecución simple
+      # Simple execution
       {:ok, result} = Arrea.execute(fn -> :ok end)
 
-      # Ejecución paralela
+      # Parallel execution
       {:ok, results} = Arrea.run([fn -> 1 end, fn -> 2 end], workers: 4)
 
-      # Suscripción a eventos del Leader
+      # Subscribing to Leader events
       :ok = Arrea.subscribe()
 
       receive do
@@ -67,9 +67,9 @@ defmodule Arrea do
           | {:retry, boolean()}
 
   @doc """
-  Devuelve el número máximo de workers configurados.
+  Returns the maximum number of workers configured.
 
-  ## Ejemplo
+  ## Example
 
       iex> Arrea.max_workers()
       100
@@ -78,22 +78,22 @@ defmodule Arrea do
   def max_workers, do: Config.get(:max_workers, 100)
 
   @doc """
-  Ejecuta un comando único de forma síncrona.
+  Executes a single command synchronously.
 
-  ## Parámetros
+  ## Parameters
 
-    * `cmd` — Un binary (comando shell) o una función sin argumentos
-    * `opts` — Opciones adicionales:
-      - `:timeout` — Timeout en ms (por defecto `30_000`). Timeout real: cancela la ejecución.
-      - `:retry` — Si se debe reintentar en caso de fallo
-      - `:shell` — Shell a usar (máxima prioridad sobre config y entorno)
+    * `cmd` — A binary (shell command) or a zero-arity function
+    * `opts` — Additional options:
+      - `:timeout` — Timeout in ms (default `30_000`). Real timeout: cancels execution.
+      - `:retry` — Whether to retry on failure
+      - `:shell` — Shell to use (highest priority over config and environment)
 
-  ## Retorna
+  ## Returns
 
-    * `{:ok, Arrea.Result.t()}` — Éxito con resultado
-    * `{:error, Arrea.Error.t()}` — Error con código y mensaje
+    * `{:ok, Arrea.Result.t()}` — Success with result
+    * `{:error, Arrea.Error.t()}` — Error with code and message
 
-  ## Ejemplos
+  ## Examples
 
       iex> Arrea.execute("echo hello")
       {:ok, %Arrea.Result{success: true, data: %{stdout: "hello\\n", ...}, failures: []}}
@@ -146,21 +146,21 @@ defmodule Arrea do
   end
 
   @doc """
-  Ejecuta múltiples comandos en paralelo.
+  Executes multiple commands in parallel.
 
-  ## Parámetros
+  ## Parameters
 
-    * `commands` — Lista de binaries o funciones
-    * `opts` — Opciones:
-      - `:workers` — Número máximo de workers paralelos (por defecto `max_workers()`)
-      - `:timeout` — Timeout total en ms
+    * `commands` — List of binaries or functions
+    * `opts` — Options:
+      - `:workers` — Maximum number of parallel workers (default `max_workers()`)
+      - `:timeout` — Total timeout in ms
 
-  ## Retorna
+  ## Returns
 
-    * `{:ok, Arrea.Result.t()}` — Con `batch_id` para correlacionar eventos
-    * `{:error, Arrea.Error.t()}` — Si todos fallaron o no hay workers disponibles
+    * `{:ok, Arrea.Result.t()}` — With `batch_id` to correlate events
+    * `{:error, Arrea.Error.t()}` — If all failed or no workers are available
 
-  ## Ejemplo
+  ## Example
 
       iex> {:ok, result} = Arrea.run([fn -> 1 end, fn -> 2 end, fn -> 3 end], workers: 2)
       iex> result.data.batch_id
@@ -212,27 +212,27 @@ defmodule Arrea do
   end
 
   @doc """
-  Suscribe el proceso actual a los eventos semánticos del Leader.
+  Subscribes the current process to the Leader's semantic events.
 
-  Los mensajes recibidos tienen la forma `{:leader_event, event}` donde
-  `event` es un mapa con al menos la clave `:type`.
+  Received messages have the shape `{:leader_event, event}` where
+  `event` is a map with at least the `:type` key.
 
-  Tipos de evento habituales:
+  Common event types:
   - `%{type: :worker_started, worker_id: id}`
   - `%{type: :progress, worker_id: id, percent: float, ...}`
   - `%{type: :finished, worker_id: id}`
   - `%{type: :error, worker_id: id, reason: term}`
   - `%{type: :result, worker_id: id, data: term}`
 
-  Para desuscribirse, llamar a `unsubscribe/0`.
+  To unsubscribe, call `unsubscribe/0`.
 
-  ## Ejemplo
+  ## Example
 
       :ok = Arrea.subscribe()
 
       receive do
         {:leader_event, %{type: :finished, worker_id: id}} ->
-          IO.puts("Worker \#{id} terminó")
+          IO.puts("Worker \#{id} finished")
       end
   """
   @spec subscribe() :: :ok
@@ -241,9 +241,9 @@ defmodule Arrea do
   end
 
   @doc """
-  Cancela la suscripción del proceso actual a los eventos del Leader.
+  Cancels the subscription of the current process to Leader events.
 
-  ## Ejemplo
+  ## Example
 
       :ok = Arrea.unsubscribe()
   """
@@ -253,12 +253,12 @@ defmodule Arrea do
   end
 
   @doc """
-  Obtiene las estadísticas actuales del Engine.
+  Returns the current statistics of the Engine.
 
-  Las estadísticas las provee `Arrea.Monitor`, que trackea el ciclo de vida
-  de todos los workers arrancados bajo el Leader.
+  The statistics are provided by `Arrea.Monitor`, which tracks the lifecycle
+  of all workers started under the Leader.
 
-  ## Ejemplo
+  ## Example
 
       iex> {:ok, stats} = Arrea.stats()
       iex> Map.keys(stats)
@@ -268,6 +268,15 @@ defmodule Arrea do
   def stats do
     Monitor.get_stats()
   end
+
+  @doc """
+  Runs a list of commands or functions in parallel and waits for all to complete.
+
+  Thin facade over `Arrea.Parallel.run_sync/2` so consumers do not need to
+  reach into the internal `Arrea.Parallel` module.
+  """
+  @spec run_sync([binary() | (-> term())], keyword()) :: [map()]
+  defdelegate run_sync(commands, opts \\ []), to: Parallel
 
   # ── Helpers privados ──────────────────────────────────────────────────────
 

@@ -1,16 +1,16 @@
 defmodule Arrea.Worker do
   @moduledoc """
-  Worker GenServer para ejecución de tareas.
+  Worker GenServer for task execution.
 
   ## Ciclo de vida
 
   1. `init/1` — Inicializa estado y se registra en `Arrea.Monitor`.
-  2. `handle_info(:execute_task, state)` — Ejecuta la primera tarea de la cola.
+  2. `handle_info(:execute_task, state)` — Executes la primera tarea de la cola.
   3. `handle_cast({:message, msg}, state)` — Procesa mensajes recibidos de otros workers.
   4. `terminate/2` — Notifica al Monitor si el worker terminó de forma inesperada.
      Si terminó por su propio flujo normal (todas las tareas completadas o error
-     gestionado), la notificación ya se emitió antes de `{:stop, ...}` y `terminate`
-     no la duplica.
+     handled), the notification was already emitted before `{:stop, ...}` and
+     `terminate` does not duplicate it.
 
   ## Formatos de mensaje aceptados
 
@@ -24,7 +24,7 @@ defmodule Arrea.Worker do
   Si no se especifica policy al iniciar el worker, se usan los valores de
   `Arrea.Config` (`:default_policy`, `:max_retries`, `:retry_delay`).
 
-  ## Uso
+  ## Usage
 
       Arrea.Worker.start_link(id: :worker_1, tasks: [fn -> :work end], parent: self())
       Arrea.Worker.send_message(:worker_1, %{type: :ping})
@@ -51,7 +51,7 @@ defmodule Arrea.Worker do
     de `Arrea.Config` (`:default_policy`, `:max_retries`, `:retry_delay`).
   - `:telemetry` — Habilitar telemetría (default: false)
 
-  ## Ejemplos
+  ## Examples
 
       iex> Worker.start_link(id: :worker_1, tasks: [fn -> :ok end])
       {:ok, pid}
@@ -69,7 +69,7 @@ defmodule Arrea.Worker do
   - `%{type: atom(), ...}` — mensaje estructurado
   - `{:send_to_worker, target_id, payload}` — enruta `payload` a otro worker
 
-  ## Ejemplos
+  ## Examples
 
       iex> Worker.send_message(:worker_1, %{type: :ping})
       :ok
@@ -85,7 +85,7 @@ defmodule Arrea.Worker do
   @doc """
   Obtiene el estado actual del worker.
 
-  ## Ejemplos
+  ## Examples
 
       iex> Worker.get_state(:worker_1)
       {:ok, %WorkerState{id: :worker_1, ...}}
@@ -204,7 +204,7 @@ defmodule Arrea.Worker do
     # Solo notifica al Monitor si el worker no terminó por su propio flujo.
     # Cuando handle_task_success o notify_error_and_stop ya llamaron a
     # safe_worker_finished, el estado tiene status :finished o :error.
-    # Evita así el doble conteo en las estadísticas del Monitor.
+    # This prevents double counting in the Monitor statistics.
     unless state.status in [:finished, :error] do
       safe_notify_monitor_finished(state.id, reason)
     end
@@ -354,7 +354,7 @@ defmodule Arrea.Worker do
       :ok
   end
 
-  # ── Ejecución de tareas ──────────────────────────────────────────────────
+  # ── Task execution ──────────────────────────────────────────────────
 
   @spec execute_next_task(WorkerState.t()) ::
           {:ok, term(), WorkerState.t()} | {:error, term(), WorkerState.t()}
@@ -381,7 +381,7 @@ defmodule Arrea.Worker do
     end
   end
 
-  # ── Mensajería entre workers ─────────────────────────────────────────────
+  # ── Inter-worker messaging ─────────────────────────────────────────────
 
   # Acepta:
   #   - Cualquier mapa con clave :type

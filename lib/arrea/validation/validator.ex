@@ -3,7 +3,7 @@ defmodule Arrea.Validation.Validator do
   Validador de alto nivel para comandos y especificaciones de workers.
 
   Compone `Arrea.Validation.Rules` para proporcionar puntos de entrada
-  de validacion usados por `Arrea.Command` y la CLI.
+  de validation usados por `Arrea.Command` y la CLI.
   """
 
   alias Arrea.Validation.Rules
@@ -13,14 +13,14 @@ defmodule Arrea.Validation.Validator do
   @doc """
   Valida una cadena de comando shell.
 
-  Ejecuta todas las verificaciones de seguridad estandar en secuencia.
+  Executes todas las security checks estandar en secuencia.
 
-  ## Retorna
+  ## Returns
 
   - `{:ok, command}` si el comando pasa todas las verificaciones
   - `{:error, reason}` en la primera verificacion que falle
 
-  ## Ejemplos
+  ## Examples
 
       iex> Validator.validate_command("echo hello")
       {:ok, "echo hello"}
@@ -39,8 +39,8 @@ defmodule Arrea.Validation.Validator do
   @doc """
   Valida una lista de comandos, retornando todos los resultados.
 
-  Retorna `{:ok, commands}` solo si TODOS los comandos pasan la validacion.
-  Retorna `{:error, errors}` con una lista de tuplas `{indice, razon}` para los fallos.
+  Returns `{:ok, commands}` solo si TODOS los comandos pasan la validation.
+  Returns `{:error, errors}` con una lista de tuplas `{indice, razon}` para los fallos.
   """
   @spec validate_commands([String.t()]) ::
           {:ok, [String.t()]} | {:error, [{non_neg_integer(), validation_error()}]}
