@@ -13,7 +13,6 @@ defmodule Arrea.Leader do
 
   use GenServer
 
-  alias Arrea.CircuitBreaker
   alias Arrea.Subscribers
   alias Arrea.Validation.Rules
 
@@ -295,17 +294,13 @@ defmodule Arrea.Leader do
 
   @spec build_task_function(String.t() | function()) :: function()
   defp build_task_function(cmd) when is_binary(cmd) do
-    shell_task = fn -> execute_shell_cmd(cmd) end
-
     case validate_command(cmd) do
-      :ok -> fn -> CircuitBreaker.call(:arrea_worker, shell_task) end
+      :ok -> fn -> execute_shell_cmd(cmd) end
       {:error, reason} -> fn -> {:error, reason} end
     end
   end
 
-  defp build_task_function(fun) when is_function(fun, 0) do
-    fn -> CircuitBreaker.call(:arrea_worker, fun) end
-  end
+  defp build_task_function(fun) when is_function(fun, 0), do: fun
 
   defp build_task_function(cmd), do: fn -> {:error, {:invalid_command, cmd}} end
 
