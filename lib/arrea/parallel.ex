@@ -1,16 +1,5 @@
 defmodule Arrea.Parallel do
-  @moduledoc """
-  Parallel execution module for commands and functions.
-
-  Provides a high-level API for concurrent execution with worker
-  management, coordination via Leader, and monitoring.
-
-  Shell options (`:shell`, `:shell_config`) and asdf/mise options
-  (`asdf_<language>`, `mise_<language>`) are automatically inherited from
-  `Arrea.Command.resolve_shell/1` and `Arrea.Command.build_full_command/2`,
-  allowing the use of the same custom shell or runtime versions
-  in parallel executions.
-  """
+  @moduledoc false
 
   alias Arrea.{Leader, Monitor}
 
