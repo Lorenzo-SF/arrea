@@ -84,7 +84,12 @@ defmodule Arrea.CircuitBreaker do
           GenServer.cast(via_tuple(name), :success)
           {:ok, result}
         rescue
-          _e ->
+          # Catching all exceptions here is intentional: the breaker
+          # contract is "any user-raised error counts as a failure".
+          # If we narrowed this to specific exceptions, an unexpected
+          # FunctionClauseError / KeyError / etc. would escape the
+          # breaker and bypass failure accounting.
+          _exception ->
             GenServer.cast(via_tuple(name), :failure)
             {:error, :execution_failed}
         end
