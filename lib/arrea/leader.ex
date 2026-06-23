@@ -13,7 +13,6 @@ defmodule Arrea.Leader do
 
   use GenServer
 
-  alias Arrea.CircuitBreaker
   alias Arrea.Subscribers
   alias Arrea.Validation.Rules
 
@@ -34,6 +33,15 @@ defmodule Arrea.Leader do
         }
 
   @max_command_length 65_536
+
+  # Per-shell-command timeout (ms). System.cmd blocks until the shell
+  # exits, so a runaway command (sleep, cat /dev/zero, network call)
+  # would otherwise hang the worker forever.
+  @default_shell_timeout 30_000
+
+  # Bound the synchronous GenServer.call timeout for execute/2 so a
+  # stuck Leader cannot block a caller forever.
+  @execute_call_timeout 60_000
 
   @doc """
   Starts the Leader as a GenServer with name `#{__MODULE__}`.
@@ -89,7 +97,28 @@ defmodule Arrea.Leader do
           | {:ok, String.t(), %{started: non_neg_integer(), failed: non_neg_integer()}}
           | {:error, term()}
   def execute(commands, opts \\ []) do
-    GenServer.call(__MODULE__, {:execute, commands, opts})
+    GenServer.call(__MODULE__, {:execute, commands, opts}, @execute_call_timeout)
+  end
+
+  @doc """
+  Fire-and-forget variant of `execute/2`. Returns `:ok` immediately
+  after enqueueing the batch. Progress is observable through the
+  existing event subscription (subscribe to Leader events).
+
+  Use this from a GenServer mailbox loop or any context where blocking
+  on the Leader's call reply is undesirable. The Leader still processes
+  the batch; the reply path is simply skipped.
+  """
+  @spec execute_async([String.t() | function()], keyword()) :: :ok
+  def execute_async(commands, opts \\ []) do
+    parent = self()
+
+    GenServer.cast(
+      __MODULE__,
+      {:execute_async, commands, opts, parent}
+    )
+
+    :ok
   end
 
   @doc """
@@ -218,6 +247,30 @@ defmodule Arrea.Leader do
     end
   end
 
+  @impl true
+  def handle_cast({:execute_async, commands, opts, parent}, state) do
+    max_allowed = Keyword.get(opts, :max_workers, state.max_workers)
+    workers = Keyword.get(opts, :workers, 4)
+
+    new_state =
+      case validate_commands(commands, max_allowed, workers) do
+        {:error, reason} ->
+          send(parent, {:arrea_execute_result, nil, {:error, reason}})
+          state
+
+        {:ok, validation} ->
+          {successes, failures, workers_acc, new_batches} =
+            start_workers(commands, opts, validation, state)
+
+          reply = build_execute_reply(successes, failures, validation.batch_id)
+          send(parent, {:arrea_execute_result, validation.batch_id, reply})
+
+          %{state | batches: new_batches, workers: workers_acc}
+      end
+
+    {:noreply, new_state}
+  end
+
   defp start_and_track_worker(cmd, idx, context, ok_count, fail_count, workers) do
     %{batch_id: batch_id, parent: parent, log: log, policy: policy} = context
     task_fn = build_task_function(cmd)
@@ -295,19 +348,34 @@ defmodule Arrea.Leader do
 
   @spec build_task_function(String.t() | function()) :: function()
   defp build_task_function(cmd) when is_binary(cmd) do
-    shell_task = fn -> execute_shell_cmd(cmd) end
-
     case validate_command(cmd) do
-      :ok -> fn -> CircuitBreaker.call(:arrea_worker, shell_task) end
+      :ok -> fn -> execute_shell_cmd(cmd, @default_shell_timeout) end
       {:error, reason} -> fn -> {:error, reason} end
     end
   end
 
-  defp build_task_function(fun) when is_function(fun, 0) do
-    fn -> CircuitBreaker.call(:arrea_worker, fun) end
-  end
+  defp build_task_function(fun) when is_function(fun, 0), do: fun
 
   defp build_task_function(cmd), do: fn -> {:error, {:invalid_command, cmd}} end
+
+  @spec execute_shell_cmd(String.t(), pos_integer()) :: map()
+  defp execute_shell_cmd(cmd, timeout) do
+    shell = Arrea.Command.resolve_shell()
+    task = Task.async(fn ->
+      System.cmd(shell, ["-c", cmd], stderr_to_stdout: true)
+    end)
+
+    case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
+      {:ok, {output, exit_code}} ->
+        %{stdout: output, exit_code: exit_code}
+
+      nil ->
+        %{stdout: "", stderr: "shell command timed out", exit_code: -1, timeout: true}
+
+      {:exit, reason} ->
+        %{stdout: "", stderr: "shell crashed: #{inspect(reason)}", exit_code: -1}
+    end
+  end
 
   @spec validate_command(String.t()) :: :ok | {:error, term()}
   defp validate_command(cmd) do
@@ -319,13 +387,6 @@ defmodule Arrea.Leader do
     else
       {:error, reason} -> {:error, {:validation_failed, reason}}
     end
-  end
-
-  @spec execute_shell_cmd(String.t()) :: map()
-  defp execute_shell_cmd(cmd) do
-    shell = Arrea.Command.resolve_shell()
-    {output, exit_code} = System.cmd(shell, ["-c", cmd], stderr_to_stdout: true)
-    %{stdout: output, exit_code: exit_code}
   end
 
   @spec build_child_spec(term(), function(), pid(), boolean(), map()) :: map()
