@@ -93,8 +93,31 @@ defmodule Arrea.Leader do
           | {:ok, String.t(), %{started: non_neg_integer(), failed: non_neg_integer()}}
           | {:error, term()}
   def execute(commands, opts \\ []) do
-    GenServer.call(__MODULE__, {:execute, commands, opts})
+    GenServer.call(__MODULE__, {:execute, commands, opts}, @execute_call_timeout)
   end
+
+  @doc """
+  Fire-and-forget variant of `execute/2`. Returns `:ok` immediately
+  after enqueueing the batch. Progress is observable through the
+  existing event subscription (subscribe to Leader events).
+
+  Use this from a GenServer mailbox loop or any context where blocking
+  on the Leader's call reply is undesirable. The Leader still processes
+  the batch; the reply path is simply skipped.
+  """
+  @spec execute_async([String.t() | function()], keyword()) :: :ok
+  def execute_async(commands, opts \\ []) do
+    parent = self()
+
+    GenServer.cast(
+      __MODULE__,
+      {:execute_async, commands, opts, parent}
+    )
+
+    :ok
+  end
+
+  @execute_call_timeout 60_000
 
   @doc """
   Broadcasts an event to all subscribers.
@@ -220,6 +243,30 @@ defmodule Arrea.Leader do
       true ->
         {:ok, batch_id}
     end
+  end
+
+  @impl true
+  def handle_cast({:execute_async, commands, opts, parent}, state) do
+    max_allowed = Keyword.get(opts, :max_workers, state.max_workers)
+    workers = Keyword.get(opts, :workers, 4)
+
+    new_state =
+      case validate_commands(commands, max_allowed, workers) do
+        {:error, reason} ->
+          send(parent, {:arrea_execute_result, nil, {:error, reason}})
+          state
+
+        {:ok, validation} ->
+          {successes, failures, workers_acc, new_batches} =
+            start_workers(commands, opts, validation, state)
+
+          reply = build_execute_reply(successes, failures, validation.batch_id)
+          send(parent, {:arrea_execute_result, validation.batch_id, reply})
+
+          %{state | batches: new_batches, workers: workers_acc}
+      end
+
+    {:noreply, new_state}
   end
 
   defp start_and_track_worker(cmd, idx, context, ok_count, fail_count, workers) do
