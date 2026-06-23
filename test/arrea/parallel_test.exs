@@ -82,12 +82,12 @@ defmodule Arrea.ParallelTest do
       assert length(results) == 2
 
       assert Enum.any?(results, fn
-               {:ok, %{result: "a"}} -> true
+               %{result: "a", exit_code: 0} -> true
                _ -> false
              end)
 
       assert Enum.any?(results, fn
-               {:ok, %{result: "b"}} -> true
+               %{result: "b", exit_code: 0} -> true
                _ -> false
              end)
     end
