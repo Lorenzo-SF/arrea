@@ -183,7 +183,7 @@ defmodule Arrea.CLI.Commands.Run do
       Printer.print([
         ChunkText.new("  "),
         ChunkText.new(spinner, color: {0, 180, 216}),
-        ChunkText.new(" Ejecutando \"#{label}...\"")
+        ChunkText.new(" Running \"#{label}...\"")
       ])
     end)
 
@@ -277,7 +277,7 @@ defmodule Arrea.CLI.Commands.Run do
         Printer.print([
           ChunkText.new("  "),
           ChunkText.new(spinner, color: {0, 180, 216}),
-          ChunkText.new(" Ejecutando \"#{label}...\"")
+          ChunkText.new(" Running \"#{label}...\"")
         ])
 
       %{exit_code: 0, duration_ms: ms} = entry ->
