@@ -361,9 +361,11 @@ defmodule Arrea.Leader do
   @spec execute_shell_cmd(String.t(), pos_integer()) :: map()
   defp execute_shell_cmd(cmd, timeout) do
     shell = Arrea.Command.resolve_shell()
-    task = Task.async(fn ->
-      System.cmd(shell, ["-c", cmd], stderr_to_stdout: true)
-    end)
+
+    task =
+      Task.async(fn ->
+        System.cmd(shell, ["-c", cmd], stderr_to_stdout: true)
+      end)
 
     case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
       {:ok, {output, exit_code}} ->
