@@ -39,6 +39,10 @@ defmodule Arrea.Leader do
   # would otherwise hang the worker forever.
   @default_shell_timeout 30_000
 
+  # Bound the synchronous GenServer.call timeout for execute/2 so a
+  # stuck Leader cannot block a caller forever.
+  @execute_call_timeout 60_000
+
   @doc """
   Starts the Leader as a GenServer with name `#{__MODULE__}`.
 
@@ -116,8 +120,6 @@ defmodule Arrea.Leader do
 
     :ok
   end
-
-  @execute_call_timeout 60_000
 
   @doc """
   Broadcasts an event to all subscribers.
