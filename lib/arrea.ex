@@ -272,11 +272,24 @@ defmodule Arrea do
   @doc """
   Runs a list of commands or functions in parallel and waits for all to complete.
 
-  Thin facade over `Arrea.Parallel.run_sync/2` so consumers do not need to
-  reach into the internal `Arrea.Parallel` module.
+  Thin facade over the internal parallel engine so consumers do not need to
+  reach into `Arrea.Parallel` (which is marked `@moduledoc false`).
+
+  ## Options
+
+    * `:workers` — Number of parallel workers (default: 4)
+    * `:timeout` — Default timeout per command in ms (default: 30_000)
+    * `:ordered` — Return results in input order (default: true)
+
+  ## Example
+
+      iex> Arrea.run_sync([fn -> 1 end, fn -> 2 end])
+      [{:ok, %{result: 1, exit_code: 0}}, {:ok, %{result: 2, exit_code: 0}}]
   """
   @spec run_sync([binary() | (-> term())], keyword()) :: [map()]
-  defdelegate run_sync(commands, opts \\ []), to: Parallel
+  def run_sync(commands, opts \\ []) when is_list(commands) do
+    Parallel.run_sync(commands, opts)
+  end
 
   # ── Helpers privados ──────────────────────────────────────────────────────
 
