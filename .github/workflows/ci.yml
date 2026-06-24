@@ -5,6 +5,7 @@ on:
     branches: [main, cleanup/audit-and-i18n]
   pull_request:
     branches: [main, cleanup/audit-and-i18n]
+  workflow_dispatch:
 
 env:
   OTP_VERSION: "28.1"
