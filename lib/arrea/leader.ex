@@ -271,15 +271,6 @@ defmodule Arrea.Leader do
     {:noreply, new_state}
   end
 
-  defp start_and_track_worker(cmd, idx, context, ok_count, fail_count, workers) do
-    %{batch_id: batch_id, parent: parent, log: log, policy: policy} = context
-    task_fn = build_task_function(cmd)
-    child_spec = build_child_spec({batch_id, idx}, task_fn, parent, log, policy)
-    {delta_ok, delta_fail, pid} = start_worker_child(child_spec, batch_id, {batch_id, idx})
-    workers = if pid, do: Map.put(workers, pid, {batch_id, idx}), else: workers
-    {ok_count + delta_ok, fail_count + delta_fail, workers}
-  end
-
   @impl true
   def handle_cast({:notify_event, event}, state) do
     new_subscribers = Subscribers.broadcast(state.subscribers, {:leader_event, event})
@@ -459,5 +450,14 @@ defmodule Arrea.Leader do
   @impl true
   def code_change(_old_vsn, state, _extra) do
     {:ok, state}
+  end
+
+  defp start_and_track_worker(cmd, idx, context, ok_count, fail_count, workers) do
+    %{batch_id: batch_id, parent: parent, log: log, policy: policy} = context
+    task_fn = build_task_function(cmd)
+    child_spec = build_child_spec({batch_id, idx}, task_fn, parent, log, policy)
+    {delta_ok, delta_fail, pid} = start_worker_child(child_spec, batch_id, {batch_id, idx})
+    workers = if pid, do: Map.put(workers, pid, {batch_id, idx}), else: workers
+    {ok_count + delta_ok, fail_count + delta_fail, workers}
   end
 end
