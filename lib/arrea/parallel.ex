@@ -291,13 +291,21 @@ defmodule Arrea.Parallel do
 
       {:error, :timeout} ->
         duration = System.monotonic_time(:millisecond) - start
-        %{stdout: "", stderr: "shell command timed out", exit_code: -1, duration_ms: duration, timeout: true}
+
+        %{
+          stdout: "",
+          stderr: "shell command timed out",
+          exit_code: -1,
+          duration_ms: duration,
+          timeout: true
+        }
 
       {:exit, reason} ->
         # Fall back to $SHELL if the configured shell is missing.
         try do
           fallback = System.get_env("SHELL") || "sh"
           task = run_shell.(fallback)
+
           case yield_or_timeout.(task) do
             {:ok, {output, exit_code}} ->
               duration = System.monotonic_time(:millisecond) - start
@@ -305,12 +313,24 @@ defmodule Arrea.Parallel do
 
             _ ->
               duration = System.monotonic_time(:millisecond) - start
-              %{stdout: "", stderr: "fallback shell failed: #{inspect(reason)}", exit_code: -1, duration_ms: duration}
+
+              %{
+                stdout: "",
+                stderr: "fallback shell failed: #{inspect(reason)}",
+                exit_code: -1,
+                duration_ms: duration
+              }
           end
         catch
           _kind, _value ->
             duration = System.monotonic_time(:millisecond) - start
-            %{stdout: "", stderr: "shell crashed: #{inspect(reason)}", exit_code: -1, duration_ms: duration}
+
+            %{
+              stdout: "",
+              stderr: "shell crashed: #{inspect(reason)}",
+              exit_code: -1,
+              duration_ms: duration
+            }
         end
     end
   end
