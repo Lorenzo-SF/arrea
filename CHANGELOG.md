@@ -7,7 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-24
+
 ### Added
+- **`Arrea.run_sync/2`** — public façade for `Arrea.Parallel.run_sync/2`. Hides the internal `Arrea.Parallel` module (`@moduledoc false`) behind a stable name so users don't import internals.
 - `Arrea.CLI.Verify.runtime_opts/1` — non-halting variant that returns `{:error, reason}` instead of `System.halt/1`.
 - `Arrea.Telemetry.CommunicationMetrics` — metrics module for inter-worker communication events (sent/received/latency).
 - `Arrea.Result` and `Arrea.Error` struct tests.
@@ -35,3 +38,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial open source release: parallel execution, workers, leader, monitor, circuit breaker, telemetry, CLI.
 
 [1.0.0]: https://hex.pm/packages/arrea/1.0.0
+
+[0.2.0]: https://github.com/Lorenzo-SF/arrea/releases/tag/v0.2.0
