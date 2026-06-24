@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - `Arrea.Policies` module (283 lines, 0 references in production code, dead code).
 
+### Changed
+- **`Arrea.run_sync/2` facade cleaned up**: the previous `defdelegate ... to: Parallel` exposed that `Arrea.Parallel` is internal (`@moduledoc false`). Replaced with a thin wrapper that calls `Parallel.run_sync/2` by name and documents the public contract on the facade. Behaviour is identical; consumers keep using `Arrea.run_sync/2`.
+
 ## [1.0.0] - 2026-06-10
 
 ### Added
