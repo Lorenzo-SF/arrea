@@ -518,6 +518,20 @@ Luego ejecuta:
 mix deps.get
 ```
 
+## Cambios recientes
+
+### v0.3.0 (2026-06-25)
+- Bumpeado `alaja` a v0.3.3 en `mix.lock`. El dispatcher CLI de Alaja ya
+  no llama a `System.halt/1` por defecto — `main/1` ahora retorna
+  `{:error, reason}` a menos que el consumidor configure
+  `halt_on_error: true`. Esto hace que el CLI de Arrea sea testeable
+  de forma segura desde ExUnit.
+- Tests en `test/arrea/cli_test.exs` actualizados para capturar stderr
+  en lugar de stdout.
+
+### v0.2.0 (2026-06-24)
+- Primera versión adoptando el DSL `Alaja.CLI.Definition`.
+
 ## Licencia
 
 Licencia MIT. Consulta el [repositorio fuente](https://github.com/lorenzo-sf/arrea) para más detalles.

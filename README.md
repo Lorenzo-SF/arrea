@@ -530,6 +530,20 @@ tagged normally, providing a clean public history going forward.
 
 A Spanish version of this README is available at [`README_ES.md`](./README_ES.md).
 
+## Recent changes
+
+### v0.3.0 (2026-06-25)
+- Bumped `alaja` to v0.3.3 in `mix.lock`. The Alaja CLI dispatcher no longer
+  calls `System.halt/1` by default — `main/1` now returns `{:error, reason}`
+  unless the consumer sets `halt_on_error: true`. This makes Arrea's
+  CLI safely testable from ExUnit.
+- Updated tests in `test/arrea/cli_test.exs` to capture stderr instead
+  of stdout (where Alaja's error messages go).
+
+### v0.2.0 (2026-06-24)
+- First release adopting the `Alaja.CLI.Definition` DSL. The previous
+  hand-rolled argument dispatcher is gone.
+
 ## License
 
 MIT License. See the [source repository](https://github.com/lorenzo-sf/arrea) for details.
