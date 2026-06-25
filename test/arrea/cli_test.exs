@@ -5,7 +5,7 @@ defmodule Arrea.CLITest do
 
   describe "Arrea.CLI module" do
     test "main/1 delegates to Arrea.CLI.Definition.main/1" do
-      output = ExUnit.CaptureIO.capture_io(fn -> Arrea.CLI.main([]) end)
+      output = ExUnit.CaptureIO.capture_io(:stderr, fn -> Arrea.CLI.main([]) end)
       assert output =~ "run"
     end
   end
@@ -65,7 +65,7 @@ defmodule Arrea.CLITest do
     end
 
     test "main/1 with no command shows help" do
-      output = ExUnit.CaptureIO.capture_io(fn -> Definition.main([]) end)
+      output = ExUnit.CaptureIO.capture_io(:stderr, fn -> Definition.main([]) end)
       assert output =~ "run"
     end
   end
