@@ -125,7 +125,8 @@ defmodule Arrea.Monitor do
 
     new_errors = if status == :error, do: state.total_errors + 1, else: state.total_errors
 
-    {:noreply, %{state | workers: new_workers, total_finished: new_finished, total_errors: new_errors}}
+    {:noreply,
+     %{state | workers: new_workers, total_finished: new_finished, total_errors: new_errors}}
   end
 
   @impl true
