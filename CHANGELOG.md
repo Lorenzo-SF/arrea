@@ -18,8 +18,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.1] - 2026-06-26
 
-## [0.3.1] - 2026-06-26
-
 ### Changed
 - Bumped `alaja` to v0.3.4 in `mix.lock`. Fixes a `print_raw/2` crash when
   the input was a `Buffer.t()` and the `:box` opt was set. Arrea's own
