@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-06-27
+
+### Changed
+- Bumped `alaja` to v0.3.7 in `mix.lock`. Now `Alaja.CLI.Definition.main/1`
+  auto-starts the OTP application, so escripts (built with `mix gen` +
+  batamanta) see the persisted `:theme_active` from `alaja.conf`.
+
+## [0.3.3] - 2026-06-27
+
 ## [0.3.3] - 2026-06-27
 
 ### Changed
