@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-25
+
+### Changed
+- Bumped `alaja` to v0.3.3 in `mix.lock`. The Alaja CLI dispatcher no longer
+  calls `System.halt/1` by default — `main/1` now returns `{:error, reason}`
+  unless the consumer sets `halt_on_error: true`. This makes Arrea's
+  CLI safely testable from ExUnit without the BEAM getting killed on
+  error paths.
+- Updated tests in `test/arrea/cli_test.exs` to capture stderr (where
+  Alaja's error messages go) instead of stdout.
+
+### Tests
+- 191 tests, 1 pre-existing failure (`Arrea.CommandTest "execute/2
+  successfully executes a command"`) unrelated to this change — uses
+  `/bin/sh` which lacks `source` builtin. Pre-existing.
+
 ## [0.2.0] - 2026-06-24
 
 ### Added
