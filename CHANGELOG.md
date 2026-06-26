@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-06-27
+
+### Changed
+- Bumped `alaja` to v0.3.8 in `mix.lock`. Now uses `pote` v0.3.0
+  (which tags the Pote.Theme system). Pre-v0.3.8, `mix deps.get`
+  could re-pin `pote` to v0.2.0 (which predates Pote.Theme),
+  breaking `Alaja.Theme` compilation.
+
+## [0.3.4] - 2026-06-27
+
 ## [0.3.4] - 2026-06-27
 
 ### Changed
