@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-06-27
+
+### Changed
+- Bumped `alaja` to v0.3.5 in `mix.lock`. Fixes a critical bug where
+  `alaja config theme set <name>` did NOT change the colour palette.
+  Arrea doesn't trigger the bug itself, but downstream consumers that
+  use `theme:<key>` lookups (or `Pote.parse(:success)`) now see the
+  active theme's colours.
+
+## [0.3.1] - 2026-06-26
+
 ## [0.3.1] - 2026-06-26
 
 ### Changed
