@@ -7,6 +7,7 @@ defmodule Arrea.CLI.Commands.Action do
   """
 
   alias Alaja.Components.{Header, Separator, Table}
+  alias Arrea.CLI
 
   @doc false
   @spec execute_with_opts(map()) :: :ok | no_return()
@@ -99,7 +100,7 @@ defmodule Arrea.CLI.Commands.Action do
       IO.puts(:stderr, "  Error: missing 'command' field")
     else
       full_args = build_args(cmd, args, verbose, quiet)
-      Arrea.CLI.main(full_args)
+      CLI.main(full_args)
     end
   end
 

@@ -1,11 +1,13 @@
 defmodule Arrea.CLITest do
   use ExUnit.Case, async: false
 
+  alias Arrea.CLI
   alias Arrea.CLI.Definition
+  alias ExUnit.CaptureIO
 
   describe "Arrea.CLI module" do
     test "main/1 delegates to Arrea.CLI.Definition.main/1" do
-      output = ExUnit.CaptureIO.capture_io(:stderr, fn -> Arrea.CLI.main([]) end)
+      output = CaptureIO.capture_io(:stderr, fn -> CLI.main([]) end)
       assert output =~ "run"
     end
   end
@@ -48,7 +50,7 @@ defmodule Arrea.CLITest do
 
     test "main/1 routes config --help" do
       output =
-        ExUnit.CaptureIO.capture_io(fn ->
+        CaptureIO.capture_io(fn ->
           Definition.main(["config", "--help"])
         end)
 
@@ -57,7 +59,7 @@ defmodule Arrea.CLITest do
 
     test "main/1 routes action --help" do
       output =
-        ExUnit.CaptureIO.capture_io(fn ->
+        CaptureIO.capture_io(fn ->
           Definition.main(["action", "--help"])
         end)
 
@@ -65,7 +67,7 @@ defmodule Arrea.CLITest do
     end
 
     test "main/1 with no command shows help" do
-      output = ExUnit.CaptureIO.capture_io(:stderr, fn -> Definition.main([]) end)
+      output = CaptureIO.capture_io(:stderr, fn -> Definition.main([]) end)
       assert output =~ "run"
     end
   end

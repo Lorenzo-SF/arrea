@@ -7,6 +7,7 @@ defmodule Arrea.CLI.Commands.Config do
   Changes persist only for the current VM session.
   """
 
+  alias Alaja.ANSI
   alias Alaja.Components.{Header, Separator, Table}
   alias Arrea.Config
   alias Arrea.Validation.Rules
@@ -37,7 +38,7 @@ defmodule Arrea.CLI.Commands.Config do
 
   def show_config do
     IO.puts("")
-    IO.puts("  #{Alaja.ANSI.fg(0, 180, 216)}Arrea Engine Configuration#{Alaja.ANSI.reset()}\n")
+    IO.puts("  #{ANSI.fg(0, 180, 216)}Arrea Engine Configuration#{ANSI.reset()}\n")
 
     rows =
       Enum.map(@config_keys, fn key ->
@@ -61,14 +62,14 @@ defmodule Arrea.CLI.Commands.Config do
   """
   @spec get_config(String.t()) :: :ok
   def get_config(key_str) do
-    key = String.to_atom(key_str)
+    case Enum.find(@config_keys, &(to_string(&1) == key_str)) do
+      nil ->
+        IO.puts(:stderr, "Unknown config key: #{key_str}")
+        IO.puts("Available: #{Enum.join(@config_keys, ", ")}")
 
-    if key in @config_keys do
-      value = Config.get(key)
-      IO.puts("  #{key_str}: #{inspect(value)}")
-    else
-      IO.puts(:stderr, "Unknown config key: #{key_str}")
-      IO.puts("Available: #{Enum.join(@config_keys, ", ")}")
+      key ->
+        value = Config.get(key)
+        IO.puts("  #{key_str}: #{inspect(value)}")
     end
   end
 
@@ -77,13 +78,13 @@ defmodule Arrea.CLI.Commands.Config do
   """
   @spec set_config(String.t(), String.t()) :: :ok
   def set_config(key_str, value_str) do
-    key = String.to_atom(key_str)
+    case Enum.find(@config_keys, &(to_string(&1) == key_str)) do
+      nil ->
+        IO.puts(:stderr, "Unknown config key: #{key_str}")
+        IO.puts("Available: #{Enum.join(@config_keys, ", ")}")
 
-    if key in @config_keys do
-      do_set_config(key, value_str)
-    else
-      IO.puts(:stderr, "Unknown config key: #{key_str}")
-      IO.puts("Available: #{Enum.join(@config_keys, ", ")}")
+      key ->
+        do_set_config(key, value_str)
     end
   end
 
@@ -91,7 +92,7 @@ defmodule Arrea.CLI.Commands.Config do
     case Integer.parse(v) do
       {n, _} when n >= 1 ->
         Config.set(:max_workers, n)
-        IO.puts("  #{Alaja.ANSI.fg(72, 187, 120)}✓#{Alaja.ANSI.reset()} max_workers set to #{n}")
+        IO.puts("  #{ANSI.fg(72, 187, 120)}✓#{ANSI.reset()} max_workers set to #{n}")
 
       _ ->
         IO.puts(:stderr, "Invalid max_workers: #{v} (must be >= 1)")
@@ -103,9 +104,7 @@ defmodule Arrea.CLI.Commands.Config do
       {n, _} when n >= 1 ->
         Config.set(:max_commands_per_batch, n)
 
-        IO.puts(
-          "  #{Alaja.ANSI.fg(72, 187, 120)}✓#{Alaja.ANSI.reset()} max_commands_per_batch set to #{n}"
-        )
+        IO.puts("  #{ANSI.fg(72, 187, 120)}✓#{ANSI.reset()} max_commands_per_batch set to #{n}")
 
       _ ->
         IO.puts(:stderr, "Invalid max_commands_per_batch: #{v} (must be >= 1)")
@@ -113,19 +112,17 @@ defmodule Arrea.CLI.Commands.Config do
   end
 
   defp do_set_config(:default_policy, v) do
-    val = String.to_atom(v)
+    case Enum.find(@valid_policies, &(to_string(&1) == v)) do
+      nil ->
+        IO.puts(
+          :stderr,
+          "Invalid default_policy: #{v} (valid: #{Enum.join(@valid_policies, ", ")})"
+        )
 
-    if val in @valid_policies do
-      Config.set(:default_policy, val)
+      val ->
+        Config.set(:default_policy, val)
 
-      IO.puts(
-        "  #{Alaja.ANSI.fg(72, 187, 120)}✓#{Alaja.ANSI.reset()} default_policy set to #{val}"
-      )
-    else
-      IO.puts(
-        :stderr,
-        "Invalid default_policy: #{v} (valid: #{Enum.join(@valid_policies, ", ")})"
-      )
+        IO.puts("  #{ANSI.fg(72, 187, 120)}✓#{ANSI.reset()} default_policy set to #{val}")
     end
   end
 
@@ -133,7 +130,7 @@ defmodule Arrea.CLI.Commands.Config do
     case Integer.parse(v) do
       {n, _} when n >= 0 ->
         Config.set(:max_retries, n)
-        IO.puts("  #{Alaja.ANSI.fg(72, 187, 120)}✓#{Alaja.ANSI.reset()} max_retries set to #{n}")
+        IO.puts("  #{ANSI.fg(72, 187, 120)}✓#{ANSI.reset()} max_retries set to #{n}")
 
       _ ->
         IO.puts(:stderr, "Invalid max_retries: #{v} (must be >= 0)")
@@ -145,9 +142,7 @@ defmodule Arrea.CLI.Commands.Config do
       {n, _} when n >= 0 ->
         Config.set(:retry_delay, n)
 
-        IO.puts(
-          "  #{Alaja.ANSI.fg(72, 187, 120)}✓#{Alaja.ANSI.reset()} retry_delay set to #{n}ms"
-        )
+        IO.puts("  #{ANSI.fg(72, 187, 120)}✓#{ANSI.reset()} retry_delay set to #{n}ms")
 
       _ ->
         IO.puts(:stderr, "Invalid retry_delay: #{v} (must be >= 0)")
@@ -159,9 +154,7 @@ defmodule Arrea.CLI.Commands.Config do
       {n, _} when n >= 0 ->
         Config.set(:restart_limit, n)
 
-        IO.puts(
-          "  #{Alaja.ANSI.fg(72, 187, 120)}✓#{Alaja.ANSI.reset()} restart_limit set to #{n}"
-        )
+        IO.puts("  #{ANSI.fg(72, 187, 120)}✓#{ANSI.reset()} restart_limit set to #{n}")
 
       _ ->
         IO.puts(:stderr, "Invalid restart_limit: #{v} (must be >= 0)")
@@ -174,7 +167,7 @@ defmodule Arrea.CLI.Commands.Config do
         Config.set(:circuit_breaker_threshold, n)
 
         IO.puts(
-          "  #{Alaja.ANSI.fg(72, 187, 120)}✓#{Alaja.ANSI.reset()} circuit_breaker_threshold set to #{n}"
+          "  #{ANSI.fg(72, 187, 120)}✓#{ANSI.reset()} circuit_breaker_threshold set to #{n}"
         )
 
       _ ->
@@ -188,7 +181,7 @@ defmodule Arrea.CLI.Commands.Config do
         Config.set(:circuit_breaker_timeout, n)
 
         IO.puts(
-          "  #{Alaja.ANSI.fg(72, 187, 120)}✓#{Alaja.ANSI.reset()} circuit_breaker_timeout set to #{n}ms"
+          "  #{ANSI.fg(72, 187, 120)}✓#{ANSI.reset()} circuit_breaker_timeout set to #{n}ms"
         )
 
       _ ->
@@ -201,9 +194,7 @@ defmodule Arrea.CLI.Commands.Config do
       {:ok, bool} ->
         Config.set(:asdf_enabled, bool)
 
-        IO.puts(
-          "  #{Alaja.ANSI.fg(72, 187, 120)}✓#{Alaja.ANSI.reset()} asdf_enabled set to #{bool}"
-        )
+        IO.puts("  #{ANSI.fg(72, 187, 120)}✓#{ANSI.reset()} asdf_enabled set to #{bool}")
 
       :error ->
         IO.puts(
@@ -218,9 +209,7 @@ defmodule Arrea.CLI.Commands.Config do
       {:ok, bool} ->
         Config.set(:telemetry_enabled, bool)
 
-        IO.puts(
-          "  #{Alaja.ANSI.fg(72, 187, 120)}✓#{Alaja.ANSI.reset()} telemetry_enabled set to #{bool}"
-        )
+        IO.puts("  #{ANSI.fg(72, 187, 120)}✓#{ANSI.reset()} telemetry_enabled set to #{bool}")
 
       :error ->
         IO.puts(
@@ -231,16 +220,16 @@ defmodule Arrea.CLI.Commands.Config do
   end
 
   defp do_set_config(:log_level, v) do
-    val = String.to_atom(v)
+    case Enum.find(@valid_log_levels, &(to_string(&1) == v)) do
+      nil ->
+        IO.puts(
+          :stderr,
+          "Invalid log_level: #{v} (valid: #{Enum.join(@valid_log_levels, ", ")})"
+        )
 
-    if val in @valid_log_levels do
-      Config.set(:log_level, val)
-      IO.puts("  #{Alaja.ANSI.fg(72, 187, 120)}✓#{Alaja.ANSI.reset()} log_level set to #{val}")
-    else
-      IO.puts(
-        :stderr,
-        "Invalid log_level: #{v} (valid: #{Enum.join(@valid_log_levels, ", ")})"
-      )
+      val ->
+        Config.set(:log_level, val)
+        IO.puts("  #{ANSI.fg(72, 187, 120)}✓#{ANSI.reset()} log_level set to #{val}")
     end
   end
 
@@ -250,7 +239,7 @@ defmodule Arrea.CLI.Commands.Config do
 
     if shell_name in allowed do
       Config.set(:shell, v)
-      IO.puts("  #{Alaja.ANSI.fg(72, 187, 120)}✓#{Alaja.ANSI.reset()} shell set to #{v}")
+      IO.puts("  #{ANSI.fg(72, 187, 120)}✓#{ANSI.reset()} shell set to #{v}")
     else
       IO.puts(:stderr, "Invalid shell: #{v} (valid: #{Enum.join(allowed, ", ")})")
     end

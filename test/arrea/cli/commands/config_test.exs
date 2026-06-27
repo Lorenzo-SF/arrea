@@ -3,6 +3,7 @@ defmodule Arrea.CLI.Commands.ConfigTest do
 
   alias Arrea.CLI.Commands.Config, as: ConfigCmd
   alias Arrea.Config
+  alias ExUnit.CaptureIO
 
   setup do
     # Snapshot the application env so tests can restore it
@@ -36,14 +37,14 @@ defmodule Arrea.CLI.Commands.ConfigTest do
 
   describe "show_config/0" do
     test "prints a table with all keys" do
-      output = ExUnit.CaptureIO.capture_io(fn -> ConfigCmd.show_config() end)
+      output = CaptureIO.capture_io(fn -> ConfigCmd.show_config() end)
       assert output =~ "max workers"
       assert output =~ "max commands per batch"
     end
 
     test "shows current values" do
       Config.set(:max_workers, 42)
-      output = ExUnit.CaptureIO.capture_io(fn -> ConfigCmd.show_config() end)
+      output = CaptureIO.capture_io(fn -> ConfigCmd.show_config() end)
       assert output =~ "42"
     end
   end
@@ -51,14 +52,14 @@ defmodule Arrea.CLI.Commands.ConfigTest do
   describe "get_config/1" do
     test "prints known key" do
       Config.set(:max_workers, 50)
-      output = ExUnit.CaptureIO.capture_io(fn -> ConfigCmd.get_config("max_workers") end)
+      output = CaptureIO.capture_io(fn -> ConfigCmd.get_config("max_workers") end)
       assert output =~ "max_workers"
       assert output =~ "50"
     end
 
     test "rejects unknown key" do
       stderr =
-        ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        CaptureIO.capture_io(:stderr, fn ->
           ConfigCmd.get_config("nonsense_key")
         end)
 
@@ -66,7 +67,7 @@ defmodule Arrea.CLI.Commands.ConfigTest do
 
       # The "Available" list goes to stdout; capture it separately.
       stdout =
-        ExUnit.CaptureIO.capture_io(fn ->
+        CaptureIO.capture_io(fn ->
           ConfigCmd.get_config("another_unknown")
         end)
 
@@ -76,14 +77,14 @@ defmodule Arrea.CLI.Commands.ConfigTest do
 
   describe "set_config/2" do
     test "sets known integer key" do
-      output = ExUnit.CaptureIO.capture_io(fn -> ConfigCmd.set_config("max_workers", "10") end)
+      output = CaptureIO.capture_io(fn -> ConfigCmd.set_config("max_workers", "10") end)
       assert output =~ "max_workers set to 10"
       assert Config.get(:max_workers) == 10
     end
 
     test "sets known atom key" do
       output =
-        ExUnit.CaptureIO.capture_io(fn -> ConfigCmd.set_config("default_policy", "retry") end)
+        CaptureIO.capture_io(fn -> ConfigCmd.set_config("default_policy", "retry") end)
 
       assert output =~ "default_policy set to retry"
       assert Config.get(:default_policy) == :retry
@@ -91,7 +92,7 @@ defmodule Arrea.CLI.Commands.ConfigTest do
 
     test "rejects invalid integer" do
       output =
-        ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        CaptureIO.capture_io(:stderr, fn ->
           ConfigCmd.set_config("max_workers", "not_a_number")
         end)
 
@@ -100,7 +101,7 @@ defmodule Arrea.CLI.Commands.ConfigTest do
 
     test "rejects invalid atom" do
       output =
-        ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        CaptureIO.capture_io(:stderr, fn ->
           ConfigCmd.set_config("default_policy", "invalid_policy")
         end)
 
@@ -109,7 +110,7 @@ defmodule Arrea.CLI.Commands.ConfigTest do
 
     test "rejects unknown key" do
       output =
-        ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        CaptureIO.capture_io(:stderr, fn ->
           ConfigCmd.set_config("nonexistent_key", "value")
         end)
 
@@ -117,14 +118,14 @@ defmodule Arrea.CLI.Commands.ConfigTest do
     end
 
     test "sets log_level" do
-      output = ExUnit.CaptureIO.capture_io(fn -> ConfigCmd.set_config("log_level", "debug") end)
+      output = CaptureIO.capture_io(fn -> ConfigCmd.set_config("log_level", "debug") end)
       assert output =~ "log_level set to debug"
       assert Config.get(:log_level) == :debug
     end
 
     test "rejects invalid log_level" do
       output =
-        ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        CaptureIO.capture_io(:stderr, fn ->
           ConfigCmd.set_config("log_level", "trace")
         end)
 
@@ -134,7 +135,7 @@ defmodule Arrea.CLI.Commands.ConfigTest do
 
   describe "help/0" do
     test "prints help text" do
-      output = ExUnit.CaptureIO.capture_io(fn -> ConfigCmd.help() end)
+      output = CaptureIO.capture_io(fn -> ConfigCmd.help() end)
       assert output =~ "arrea config"
     end
   end
