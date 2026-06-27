@@ -73,7 +73,7 @@ defmodule Arrea.CLI.Definition do
       |> Enum.map(fn key ->
         value = opts[key]
         runtime = String.replace_prefix(to_string(key), "asdf_", "")
-        {:"asdf_#{runtime}", value}
+        {String.to_existing_atom("asdf_#{runtime}"), value}
       end)
 
     mise_opts =
@@ -84,7 +84,7 @@ defmodule Arrea.CLI.Definition do
       |> Enum.map(fn key ->
         value = opts[key]
         runtime = String.replace_prefix(to_string(key), "mise_", "")
-        {:"mise_#{runtime}", value}
+        {String.to_existing_atom("mise_#{runtime}"), value}
       end)
 
     asdf_opts ++ mise_opts

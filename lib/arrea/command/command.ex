@@ -11,7 +11,7 @@ defmodule Arrea.Command do
   ## Shell resolution
 
   The shell is resolved with the following priority (lowest to highest):
-  1. `Arrea.Config.get(:shell)` — consumer project or runtime config
+  1. `Config.get(:shell)` — consumer project or runtime config
   2. `$SHELL` environment variable
   3. Current user login shell (`/etc/passwd`)
   4. `:shell` option passed to `execute/2` — **highest priority**
@@ -58,6 +58,7 @@ defmodule Arrea.Command do
       {:error, :timeout}
   """
 
+  alias Arrea.Config
   alias Arrea.Validation.Validator
 
   @type result :: %{
@@ -95,7 +96,7 @@ defmodule Arrea.Command do
 
   @doc """
   Resolves the shell to use, by priority (lowest to highest):
-  1. `Arrea.Config.get(:shell)` (project config or `Config.set/2`)
+  1. `Config.get(:shell)` (project config or `Config.set/2`)
   2. `$SHELL` environment variable
   3. User login shell in `/etc/passwd`
   4. `:shell` option passed in `opts` — highest priority
@@ -108,7 +109,7 @@ defmodule Arrea.Command do
   def resolve_shell(opts \\ []) do
     candidate =
       Keyword.get(opts, :shell) ||
-        Arrea.Config.get(:shell) ||
+        Config.get(:shell) ||
         default_user_login_shell() ||
         "sh"
 
@@ -188,7 +189,7 @@ defmodule Arrea.Command do
   @spec execute_with_asdf(String.t(), atom(), String.t(), keyword()) ::
           {:ok, result()} | {:error, term()}
   def execute_with_asdf(cmd, language, version, opts \\ []) do
-    lang_key = String.to_atom("asdf_#{language}")
+    lang_key = String.to_existing_atom("asdf_#{language}")
     execute(cmd, Keyword.put(opts, lang_key, version))
   end
 

@@ -5,7 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.6] - 2026-06-27
+
+### Fixed
+- Resolved all `mix credo --strict` warnings across the codebase:
+  - **Warnings (atom creation)**: Replaced `String.to_atom/1` with `Enum.find/2`
+    matching on pre-existing atoms in `Arrea.CLI.Commands.Config` (get/set config,
+    default_policy, log_level). Replaced `:"#{atom}"` interpolation with
+    `String.to_existing_atom/1` in `Arrea.CLI.Definition` (asdf/mise opts) and
+    `Arrea.Command.execute_with_asdf/3`.
+  - **Refactor (cyclomatic complexity)**: Reduced `Arrea.Parallel.do_execute_cmd/2`
+    complexity from 12 to ≤9 by extracting anonymous functions `run_shell/2`,
+    `yield_or_timeout/2` and fallback logic `execute_shell_with_fallback/4`
+    into named private functions.
+  - **Design (module aliases)**: Added `alias` declarations for `Arrea.Config`,
+    `Arrea.CLI`, `Arrea.Command`, `Arrea.Parallel`, `Alaja.ANSI`, and
+    `ExUnit.CaptureIO` across source and test files to avoid fully-qualified
+    nested module references.
+  - **Test fix**: Replaced dynamic atom creation (`:"worker_#{test_name}"`)
+    with a fixed `:circuit_breaker_test` atom in `CircuitBreakerTest`.
 
 ## [0.3.5] - 2026-06-27
 
