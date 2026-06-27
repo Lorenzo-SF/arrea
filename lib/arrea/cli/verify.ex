@@ -124,19 +124,18 @@ defmodule Arrea.CLI.Verify do
     else
       case System.cmd("mise", ["ls", runtime, "--json"], stderr_to_stdout: true) do
         {output, 0} ->
-          try do
-            versions =
-              output
-              |> Jason.decode!()
-              |> Enum.map(fn %{"version" => v} -> v end)
+          case Jason.decode(output) do
+            {:ok, versions} ->
+              versions_list = Enum.map(versions, fn %{"version" => v} -> v end)
 
-            if version in versions do
-              {:cont, :ok}
-            else
-              {:halt, {:error, {:mise_version_missing, runtime, version}}}
-            end
-          rescue
-            _ -> {:halt, {:error, :mise_not_found}}
+              if version in versions_list do
+                {:cont, :ok}
+              else
+                {:halt, {:error, {:mise_version_missing, runtime, version}}}
+              end
+
+            {:error, _} ->
+              {:halt, {:error, :mise_not_found}}
           end
 
         {_output, _exit_code} ->
@@ -148,12 +147,9 @@ defmodule Arrea.CLI.Verify do
   defp list_mise_versions(runtime) do
     case System.cmd("mise", ["ls", runtime, "--json"], stderr_to_stdout: true) do
       {output, 0} ->
-        try do
-          output
-          |> Jason.decode!()
-          |> Enum.map(fn %{"version" => v} -> v end)
-        rescue
-          _ -> []
+        case Jason.decode(output) do
+          {:ok, versions} -> Enum.map(versions, fn %{"version" => v} -> v end)
+          {:error, _} -> []
         end
 
       _ ->

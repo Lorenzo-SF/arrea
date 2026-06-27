@@ -212,14 +212,26 @@ defmodule Arrea.Leader do
       batch_id: validation.batch_id,
       parent: self(),
       policy: Keyword.get(opts, :policy, %{}),
-      log: Keyword.get(opts, :log, false)
+      log: Keyword.get(opts, :log, false),
+      max_workers: state.max_workers,
+      active_count: map_size(state.workers)
     }
 
     {successes, failures, workers_acc} =
       commands
       |> Enum.with_index()
       |> Enum.reduce({0, 0, %{}}, fn {cmd, idx}, {ok_count, fail_count, workers} ->
-        start_and_track_worker(cmd, idx, context, ok_count, fail_count, workers)
+        current_active = map_size(workers) + context.active_count
+
+        if current_active >= context.max_workers do
+          Logger.warning(
+            "[Leader] Global worker limit reached (#{context.max_workers}), skipping command #{idx}"
+          )
+
+          {ok_count, fail_count + 1, workers}
+        else
+          start_and_track_worker(cmd, idx, context, ok_count, fail_count, workers)
+        end
       end)
 
     new_batches =
