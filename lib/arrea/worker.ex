@@ -38,6 +38,7 @@ defmodule Arrea.Worker do
 
   alias Arrea.Config
   alias Arrea.{Leader, Monitor, WorkerState}
+  alias Arrea.Telemetry.Metrics, as: TelemetryMetrics
 
   @doc """
   Inicia un worker con opciones configurables.
@@ -59,8 +60,10 @@ defmodule Arrea.Worker do
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
-    id = Keyword.fetch!(opts, :id)
-    GenServer.start_link(__MODULE__, opts, name: via_tuple(id))
+    case Keyword.fetch(opts, :id) do
+      {:ok, id} -> GenServer.start_link(__MODULE__, opts, name: via_tuple(id))
+      :error -> {:error, "missing required option :id"}
+    end
   end
 
   @doc """
@@ -509,10 +512,38 @@ defmodule Arrea.Worker do
   defp format_terminate_reason(reason), do: reason
 
   @spec attach_telemetry(term()) :: :ok
-  defp attach_telemetry(_worker_id), do: :ok
+  defp attach_telemetry(worker_id) do
+    :telemetry.attach(
+      {__MODULE__, worker_id, :started},
+      [:arrea, :worker, :started],
+      &TelemetryMetrics.handle_worker_started/4,
+      %{}
+    )
+
+    :telemetry.attach(
+      {__MODULE__, worker_id, :completed},
+      [:arrea, :worker, :completed],
+      &TelemetryMetrics.handle_worker_completed/4,
+      %{}
+    )
+
+    :telemetry.attach(
+      {__MODULE__, worker_id, :error},
+      [:arrea, :worker, :error],
+      &TelemetryMetrics.handle_worker_error/4,
+      %{}
+    )
+
+    :ok
+  end
 
   @spec detach_telemetry(term()) :: :ok
-  defp detach_telemetry(_worker_id), do: :ok
+  defp detach_telemetry(worker_id) do
+    :telemetry.detach({__MODULE__, worker_id, :started})
+    :telemetry.detach({__MODULE__, worker_id, :completed})
+    :telemetry.detach({__MODULE__, worker_id, :error})
+    :ok
+  end
 
   @impl true
   def code_change(_old_vsn, state, _extra), do: {:ok, state}
