@@ -1,6 +1,7 @@
 defmodule Arrea.Parallel do
   @moduledoc false
 
+  alias Arrea.Command
   alias Arrea.Leader
 
   @doc """
@@ -261,77 +262,81 @@ defmodule Arrea.Parallel do
 
   @spec do_execute_cmd(String.t(), keyword()) :: map()
   defp do_execute_cmd(cmd, opts) when is_binary(cmd) do
-    shell = Arrea.Command.resolve_shell(opts)
-    full_cmd = Arrea.Command.build_full_command(cmd, opts)
-    # Outer timeout covers the shell invocation. If the wrapper
-    # (run_sync / run_stream / run_tasks) already enforces a yield
-    # timeout, this is a backstop that prevents a hung System.cmd
-    # from blocking the BEAM scheduler indefinitely.
+    shell = Command.resolve_shell(opts)
+    full_cmd = Command.build_full_command(cmd, opts)
     timeout = Keyword.get(opts, :timeout, 30_000)
     start = System.monotonic_time(:millisecond)
 
-    run_shell = fn shell_to_use ->
-      Task.async(fn ->
-        System.cmd(shell_to_use, ["-c", full_cmd], stderr_to_stdout: true)
-      end)
-    end
+    case yield_or_timeout(run_shell(shell, full_cmd), timeout) do
+      {:ok, {output, exit_code}} ->
+        build_shell_success(output, exit_code, start)
 
-    yield_or_timeout = fn task ->
-      case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
-        {:ok, value} -> {:ok, value}
-        nil -> {:error, :timeout}
-        {:exit, reason} -> {:exit, reason}
-      end
-    end
+      {:error, :timeout} ->
+        build_shell_timeout(start)
 
-    case run_shell.(shell) |> yield_or_timeout.() do
+      {:exit, reason} ->
+        execute_shell_with_fallback(full_cmd, timeout, start, reason)
+    end
+  end
+
+  defp run_shell(shell, full_cmd) do
+    Task.async(fn ->
+      System.cmd(shell, ["-c", full_cmd], stderr_to_stdout: true)
+    end)
+  end
+
+  defp yield_or_timeout(task, timeout) do
+    case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
+      {:ok, value} -> {:ok, value}
+      nil -> {:error, :timeout}
+      {:exit, reason} -> {:exit, reason}
+    end
+  end
+
+  defp build_shell_success(output, exit_code, start) do
+    duration = System.monotonic_time(:millisecond) - start
+    %{stdout: output, stderr: "", exit_code: exit_code, duration_ms: duration}
+  end
+
+  defp build_shell_timeout(start) do
+    duration = System.monotonic_time(:millisecond) - start
+
+    %{
+      stdout: "",
+      stderr: "shell command timed out",
+      exit_code: -1,
+      duration_ms: duration,
+      timeout: true
+    }
+  end
+
+  defp execute_shell_with_fallback(full_cmd, timeout, start, reason) do
+    fallback = System.get_env("SHELL") || "sh"
+
+    case yield_or_timeout(run_shell(fallback, full_cmd), timeout) do
       {:ok, {output, exit_code}} ->
         duration = System.monotonic_time(:millisecond) - start
         %{stdout: output, stderr: "", exit_code: exit_code, duration_ms: duration}
 
-      {:error, :timeout} ->
+      _ ->
         duration = System.monotonic_time(:millisecond) - start
 
         %{
           stdout: "",
-          stderr: "shell command timed out",
+          stderr: "fallback shell failed: #{inspect(reason)}",
           exit_code: -1,
-          duration_ms: duration,
-          timeout: true
+          duration_ms: duration
         }
-
-      {:exit, reason} ->
-        # Fall back to $SHELL if the configured shell is missing.
-        try do
-          fallback = System.get_env("SHELL") || "sh"
-          task = run_shell.(fallback)
-
-          case yield_or_timeout.(task) do
-            {:ok, {output, exit_code}} ->
-              duration = System.monotonic_time(:millisecond) - start
-              %{stdout: output, stderr: "", exit_code: exit_code, duration_ms: duration}
-
-            _ ->
-              duration = System.monotonic_time(:millisecond) - start
-
-              %{
-                stdout: "",
-                stderr: "fallback shell failed: #{inspect(reason)}",
-                exit_code: -1,
-                duration_ms: duration
-              }
-          end
-        catch
-          _kind, _value ->
-            duration = System.monotonic_time(:millisecond) - start
-
-            %{
-              stdout: "",
-              stderr: "shell crashed: #{inspect(reason)}",
-              exit_code: -1,
-              duration_ms: duration
-            }
-        end
     end
+  rescue
+    _ ->
+      duration = System.monotonic_time(:millisecond) - start
+
+      %{
+        stdout: "",
+        stderr: "shell crashed: #{inspect(reason)}",
+        exit_code: -1,
+        duration_ms: duration
+      }
   end
 end

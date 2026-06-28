@@ -13,6 +13,7 @@ defmodule Arrea.Leader do
 
   use GenServer
 
+  alias Arrea.Command
   alias Arrea.Subscribers
   alias Arrea.Validation.Rules
 
@@ -351,7 +352,7 @@ defmodule Arrea.Leader do
 
   @spec execute_shell_cmd(String.t(), pos_integer()) :: map()
   defp execute_shell_cmd(cmd, timeout) do
-    shell = Arrea.Command.resolve_shell()
+    shell = Command.resolve_shell()
 
     task =
       Task.async(fn ->

@@ -36,6 +36,7 @@ defmodule Arrea.Worker do
 
   require Logger
 
+  alias Arrea.Config
   alias Arrea.{Leader, Monitor, WorkerState}
 
   @doc """
@@ -421,7 +422,7 @@ defmodule Arrea.Worker do
 
   defp handle_error_with_policy(state, reason, error_state) do
     # Si no hay política explícita, se construye una desde la config global.
-    # Esto garantiza que Arrea.Config.set/2 y config.exs del proyecto consumidor
+    # Esto garantiza que Config.set/2 y config.exs del proyecto consumidor
     # afecten al comportamiento por defecto de los workers.
     policy = state.policy || build_default_policy()
 
@@ -452,9 +453,9 @@ defmodule Arrea.Worker do
   @spec build_default_policy() :: map()
   defp build_default_policy do
     %{
-      on_error: Arrea.Config.get(:default_policy, :retry),
-      max_retries: Arrea.Config.get(:max_retries, 3),
-      retry_delay: Arrea.Config.get(:retry_delay, 1_000)
+      on_error: Config.get(:default_policy, :retry),
+      max_retries: Config.get(:max_retries, 3),
+      retry_delay: Config.get(:retry_delay, 1_000)
     }
   end
 

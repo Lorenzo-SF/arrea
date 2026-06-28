@@ -5,14 +5,11 @@ defmodule Arrea.CircuitBreakerTest do
   @max_failures 3
   @timeout 200
 
-  setup %{test: test_name} do
-    test_id = :"worker_#{test_name}"
+  setup do
+    test_id = :circuit_breaker_test
 
-    # Ensure Registry is started. We ignore errors if already started.
-    # Ensure Registry is started.
     _ = start_supervised({Registry, keys: :unique, name: Arrea.CircuitBreaker.Registry})
 
-    # Try stopping any potential existing breaker for this test_id
     case Registry.lookup(Arrea.CircuitBreaker.Registry, test_id) do
       [{existing_pid, _}] ->
         Process.exit(existing_pid, :kill)

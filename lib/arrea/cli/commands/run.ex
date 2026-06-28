@@ -7,6 +7,7 @@ defmodule Arrea.CLI.Commands.Run do
   alias Alaja.Components.{Header, Separator, Table}
   alias Alaja.Printer
   alias Alaja.Structures.ChunkText
+  alias Arrea.Parallel
   alias Arrea.Validation.Validator
 
   @spinner_frames ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -160,7 +161,7 @@ defmodule Arrea.CLI.Commands.Run do
     if quiet do
       sync_opts = Keyword.merge(exec_opts, workers: workers, timeout: timeout)
 
-      Arrea.Parallel.run_sync(commands, sync_opts)
+      Parallel.run_sync(commands, sync_opts)
       |> Enum.with_index()
       |> Enum.map(fn {result, idx} ->
         entry = build_result_entry(Enum.at(commands, idx), result)
