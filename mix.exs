@@ -99,7 +99,7 @@ defmodule Arrea.MixProject do
 
   defp deps do
     [
-      {:alaja, github: "Lorenzo-SF/alaja"},
+      {:alaja, github: "Lorenzo-SF/alaja", branch: "main"},
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.3"},
       {:telemetry_metrics, "~> 1.1"},
