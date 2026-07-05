@@ -51,13 +51,14 @@ defmodule Arrea.LongRunning do
   require Logger
 
   @type id :: term()
-  @type opt :: {:id, id()}
-            | {:binary, Path.t()}
-            | {:args, [String.t()]}
-            | {:env, [{String.t(), String.t()}]}
-            | {:cd, String.t()}
-            | {:health, (-> any())}
-            | {:name, GenServer.name()}
+  @type opt ::
+          {:id, id()}
+          | {:binary, Path.t()}
+          | {:args, [String.t()]}
+          | {:env, [{String.t(), String.t()}]}
+          | {:cd, String.t()}
+          | {:health, (-> any())}
+          | {:name, GenServer.name()}
 
   @doc """
   Starts a long-running process synchronously (linked to the caller).
@@ -80,6 +81,7 @@ defmodule Arrea.LongRunning do
   def start(opts) do
     id = Keyword.fetch!(opts, :id)
     child_spec = {__MODULE__, opts}
+
     DynamicSupervisor.start_child(Arrea.WorkerSupervisor, child_spec)
     |> case do
       {:ok, pid} -> {:ok, pid}
@@ -113,6 +115,7 @@ defmodule Arrea.LongRunning do
       [{pid, _}] ->
         try do
           health_fn = :persistent_term.get({__MODULE__, pid, :health}, nil)
+
           if is_function(health_fn, 0) do
             case health_fn.() do
               truthy when truthy in [true, :ok] -> :ok
