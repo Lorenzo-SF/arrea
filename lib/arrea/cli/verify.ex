@@ -122,38 +122,50 @@ defmodule Arrea.CLI.Verify do
     if System.find_executable("mise") == nil do
       {:halt, {:error, :mise_not_found}}
     else
-      case System.cmd("mise", ["ls", runtime, "--json"], stderr_to_stdout: true) do
-        {output, 0} ->
-          case Jason.decode(output) do
-            {:ok, versions} ->
-              versions_list = Enum.map(versions, fn %{"version" => v} -> v end)
+      check_mise_version(runtime, version)
+    end
+  end
 
-              if version in versions_list do
-                {:cont, :ok}
-              else
-                {:halt, {:error, {:mise_version_missing, runtime, version}}}
-              end
+  defp check_mise_version(runtime, version) do
+    case System.cmd("mise", ["ls", runtime, "--json"], stderr_to_stdout: true) do
+      {output, 0} ->
+        check_mise_versions_list(output, runtime, version)
 
-            {:error, _} ->
-              {:halt, {:error, :mise_not_found}}
-          end
+      {_output, _exit_code} ->
+        {:halt, {:error, {:mise_plugin_missing, runtime}}}
+    end
+  end
 
-        {_output, _exit_code} ->
-          {:halt, {:error, {:mise_plugin_missing, runtime}}}
-      end
+  defp check_mise_versions_list(output, runtime, version) do
+    case Jason.decode(output) do
+      {:ok, versions} ->
+        versions_list = Enum.map(versions, fn %{"version" => v} -> v end)
+
+        if version in versions_list do
+          {:cont, :ok}
+        else
+          {:halt, {:error, {:mise_version_missing, runtime, version}}}
+        end
+
+      {:error, _} ->
+        {:halt, {:error, :mise_not_found}}
     end
   end
 
   defp list_mise_versions(runtime) do
     case System.cmd("mise", ["ls", runtime, "--json"], stderr_to_stdout: true) do
       {output, 0} ->
-        case Jason.decode(output) do
-          {:ok, versions} -> Enum.map(versions, fn %{"version" => v} -> v end)
-          {:error, _} -> []
-        end
+        decode_mise_versions(output)
 
       _ ->
         []
+    end
+  end
+
+  defp decode_mise_versions(output) do
+    case Jason.decode(output) do
+      {:ok, versions} -> Enum.map(versions, fn %{"version" => v} -> v end)
+      {:error, _} -> []
     end
   end
 
