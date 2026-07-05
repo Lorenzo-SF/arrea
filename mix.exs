@@ -4,7 +4,7 @@ defmodule Arrea.MixProject do
   def project do
     [
       app: :arrea,
-      version: "0.3.6",
+      version: "2.0.0",
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -107,7 +107,7 @@ defmodule Arrea.MixProject do
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
-      {:batamanta, "~> 1.5.1", optional: true, runtime: false},
+      {:batamanta, "~> 1.6.1", optional: true, runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
       {:benchee, "~> 1.3", only: :dev}
     ]

@@ -95,6 +95,11 @@ defmodule Arrea.Parallel do
     default_timeout = Keyword.get(opts, :timeout, 30_000)
     ordered = Keyword.get(opts, :ordered, true)
     exec_opts = Keyword.drop(opts, [:workers, :timeout, :ordered])
+    n = length(commands)
+
+    # Outer timeout = max per-task × tasks + 5s buffer so a single hung
+    # worker doesn't freeze the whole stream forever.
+    stream_timeout = default_timeout * max(n, 1) + 5_000
 
     commands
     |> Enum.with_index()
@@ -102,6 +107,7 @@ defmodule Arrea.Parallel do
       fn {cmd_entry, idx} ->
         {cmd, tag, timeout} = normalize_command(cmd_entry, idx, default_timeout)
 
+        # Inner Task per command so we can enforce per-task timeout.
         task = Task.async(fn -> do_execute(cmd, exec_opts) end)
 
         result =
@@ -113,7 +119,7 @@ defmodule Arrea.Parallel do
 
         {idx, tag, result}
       end,
-      timeout: :infinity,
+      timeout: stream_timeout,
       max_concurrency: workers,
       ordered: ordered
     )
@@ -183,6 +189,7 @@ defmodule Arrea.Parallel do
     workers = Keyword.get(opts, :workers, 4)
     timeout = Keyword.get(opts, :timeout, 30_000)
     exec_opts = Keyword.drop(opts, [:workers, :timeout])
+    stream_timeout = timeout * max(length(commands), 1) + 5_000
 
     commands
     |> Enum.with_index()
@@ -196,7 +203,7 @@ defmodule Arrea.Parallel do
           {:exit, reason} -> {idx, {:error, reason}}
         end
       end,
-      timeout: :infinity,
+      timeout: stream_timeout,
       max_concurrency: workers,
       ordered: false
     )
@@ -329,12 +336,12 @@ defmodule Arrea.Parallel do
         }
     end
   rescue
-    _ ->
+    e ->
       duration = System.monotonic_time(:millisecond) - start
 
       %{
         stdout: "",
-        stderr: "shell crashed: #{inspect(reason)}",
+        stderr: "shell crashed: #{Exception.message(e)}",
         exit_code: -1,
         duration_ms: duration
       }
