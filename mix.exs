@@ -52,7 +52,7 @@ defmodule Arrea.MixProject do
       main: "readme",
       source_url: "https://github.com/Lorenzo-SF/arrea",
       homepage_url: "https://github.com/Lorenzo-SF/arrea",
-      extras: ["README.md", "README_ES.md", "LICENSE.md"],
+      extras: ["README.md", "docs/README_ES.md", "LICENSE.md"],
       groups_for_modules: [
         "Core API": [Arrea, Arrea.Config, Arrea.Error, Arrea.Result],
         "OTP Core": [
