@@ -5,117 +5,137 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.6] - 2026-06-27
+## [Unreleased]
 
-### Fixed
-- Resolved all `mix credo --strict` warnings across the codebase:
-  - **Warnings (atom creation)**: Replaced `String.to_atom/1` with `Enum.find/2`
-    matching on pre-existing atoms in `Arrea.CLI.Commands.Config` (get/set config,
-    default_policy, log_level). Replaced `:"#{atom}"` interpolation with
-    `String.to_existing_atom/1` in `Arrea.CLI.Definition` (asdf/mise opts) and
-    `Arrea.Command.execute_with_asdf/3`.
-  - **Refactor (cyclomatic complexity)**: Reduced `Arrea.Parallel.do_execute_cmd/2`
-    complexity from 12 to ≤9 by extracting anonymous functions `run_shell/2`,
-    `yield_or_timeout/2` and fallback logic `execute_shell_with_fallback/4`
-    into named private functions.
-  - **Design (module aliases)**: Added `alias` declarations for `Arrea.Config`,
-    `Arrea.CLI`, `Arrea.Command`, `Arrea.Parallel`, `Alaja.ANSI`, and
-    `ExUnit.CaptureIO` across source and test files to avoid fully-qualified
-    nested module references.
-  - **Test fix**: Replaced dynamic atom creation (`:"worker_#{test_name}"`)
-    with a fixed `:circuit_breaker_test` atom in `CircuitBreakerTest`.
+## [2.0.0] - 2026-07-05
 
-## [0.3.5] - 2026-06-27
-
-### Changed
-- Bumped `alaja` to v0.3.8 in `mix.lock`. Now uses `pote` v0.3.0
-  (which tags the Pote.Theme system). Pre-v0.3.8, `mix deps.get`
-  could re-pin `pote` to v0.2.0 (which predates Pote.Theme),
-  breaking `Alaja.Theme` compilation.
-
-## [0.3.4] - 2026-06-27
-
-## [0.3.4] - 2026-06-27
-
-### Changed
-- Bumped `alaja` to v0.3.7 in `mix.lock`. Now `Alaja.CLI.Definition.main/1`
-  auto-starts the OTP application, so escripts (built with `mix gen` +
-  batamanta) see the persisted `:theme_active` from `alaja.conf`.
-
-## [0.3.3] - 2026-06-27
-
-## [0.3.3] - 2026-06-27
-
-### Changed
-- Bumped `alaja` to v0.3.6 in `mix.lock`. Fixes cross-process theme
-  persistence: every escript now sees the persisted `:theme_active`
-  from `alaja.conf` without anyone calling `Alaja.Theme.activate/1`.
-
-## [0.3.2] - 2026-06-27
-
-## [0.3.2] - 2026-06-27
-
-### Changed
-- Bumped `alaja` to v0.3.5 in `mix.lock`. Fixes a critical bug where
-  `alaja config theme set <name>` did NOT change the colour palette.
-  Arrea doesn't trigger the bug itself, but downstream consumers that
-  use `theme:<key>` lookups (or `Pote.parse(:success)`) now see the
-  active theme's colours.
-
-## [0.3.1] - 2026-06-26
-
-### Changed
-- Bumped `alaja` to v0.3.4 in `mix.lock`. Fixes a `print_raw/2` crash when
-  the input was a `Buffer.t()` and the `:box` opt was set. Arrea's own
-  tests don't trigger this, but downstream consumers using `alaja` for
-  Cell-engine rendering (with box wrapping) benefit immediately.
-
-## [0.3.0] - 2026-06-25
-
-### Changed
-- Bumped `alaja` to v0.3.3 in `mix.lock`. The Alaja CLI dispatcher no longer
-  calls `System.halt/1` by default — `main/1` now returns `{:error, reason}`
-  unless the consumer sets `halt_on_error: true`. This makes Arrea's
-  CLI safely testable from ExUnit without the BEAM getting killed on
-  error paths.
-- Updated tests in `test/arrea/cli_test.exs` to capture stderr (where
-  Alaja's error messages go) instead of stdout.
-
-### Tests
-- 191 tests, 1 pre-existing failure (`Arrea.CommandTest "execute/2
-  successfully executes a command"`) unrelated to this change — uses
-  `/bin/sh` which lacks `source` builtin. Pre-existing.
-
-## [0.2.0] - 2026-06-24
+This release consolidates everything between 1.0.0 and the current
+HEAD — including the 0.2.0 facade refactor, the 0.3.x alaja
+integration pass, the Credo hardening, the production hardening, and
+the latest timeout fixes. Earlier `0.x` versions are no longer
+maintained and have been collapsed into this single canonical entry.
 
 ### Added
-- **`Arrea.run_sync/2`** — public façade for `Arrea.Parallel.run_sync/2`. Hides the internal `Arrea.Parallel` module (`@moduledoc false`) behind a stable name so users don't import internals.
-- `Arrea.CLI.Verify.runtime_opts/1` — non-halting variant that returns `{:error, reason}` instead of `System.halt/1`.
-- `Arrea.Telemetry.CommunicationMetrics` — metrics module for inter-worker communication events (sent/received/latency).
-- `Arrea.Result` and `Arrea.Error` struct tests.
-- `Arrea.CLI.Commands.Config` test coverage for show/get/set/help.
-- `Arrea.CircuitBreaker.State` struct tests.
-- `Arrea.CLI` end-to-end test exercising the self-hosted dispatch via the Alaja DSL.
+
+- **`Arrea.run_sync/2`** — public façade for `Arrea.Parallel.run_sync/2`.
+  Hides the internal `Arrea.Parallel` module behind a stable name so
+  consumers don't import internals.
+- **`Arrea.CLI`** — CLI framework via Alaja DSL with three command
+  groups: `config` (show/get/set config, default_policy, log_level),
+  `verify` (runtime opts validation), and `action` (run commands).
+  Uses `use Alaja.CLI.Definition` for self-hosting.
+- **`Arrea.CLI.Verify.runtime_opts/1`** — non-halting variant that
+  returns `{:error, reason}` instead of `System.halt/1`.
+- **`Arrea.Telemetry.CommunicationMetrics`** — metrics module for
+  inter-worker communication events (sent/received/latency).
+- **`Arrea.CircuitBreaker`** — circuit breaker with `State` struct,
+  worker supervision, and automatic recovery.
+- **`Arrea.Result`** and **`Arrea.Error`** structs with test coverage.
+- **CI pipeline**: multi-stage workflow — format → credo → sobelow →
+  test+coverage → dialyzer, plus `workflow_dispatch` trigger for
+  manual re-runs.
+
+### Fixed
+
+- **`Parallel.do_execute_cmd/2`**: was unbounded — no timeout guard.
+  Attackers (or buggy commands) could sleep forever and hold a worker
+  indefinitely. Added `default_timeout * n + 5s` cap with clean
+  `:timeout` exit.
+- **`Leader.execute_shell_cmd/1`**: same unbounded DoS vector.
+  Added timeout guard.
+- **`run_sync` / `run_stream`**: `timeout: :infinity` replaced with
+  `default_timeout * n + 5s` to match the per-command timeout pattern.
+- **`execute_shell_with_fallback/4`**: `rescue _` → `rescue e` —
+  logs the actual exception message instead of swallowing it.
+- **Production hardening**: backpressure fixes, safe JSON/Keyword
+  handling, telemetry wiring cleanup.
+- **All `mix credo --strict` warnings** resolved:
+  - Atom creation → `String.to_existing_atom/1` / `Enum.find/2`
+  - Cyclomatic complexity (do_execute_cmd) reduced from 12 to ≤9
+  - Missing module aliases added across source and tests
+  - Dynamic test atoms replaced with fixed atom names
+- **`@execute_call_timeout` ordering**: attribute defined before usage
+  to fix compiler warning.
+- **`run_sync` result shape**: aligned with documented contract.
 
 ### Changed
-- **`Arrea.CLI.Verify` refactored**: error paths now use `{:cont, _} | {:halt, _}` reduction. Callers can opt into the non-halting `runtime_opts/1` for testable flows or use `runtime_opts!/1` for the original halt-on-error behaviour.
-- **`Arrea.CLI.Definition` migrated** to the new Alaja DSL (`run {Mod, :fun}` instead of `run &fun/1`).
-- **i18n**: translated remaining Spanish docstrings, moduledocs, and inline comments to English across the library for consistency.
-- **Outdated README fixed**: bumped recommended version from `~> 0.1.0` to `~> 1.0.0` in `arrea run`, `arrea config`, and `arrea action` examples.
-- Dep: `{:alaja, github: "Lorenzo-SF/alaja"}` — no longer requires hex publishing for development.
-- `Arrea.CLI.Definition.run_handler`, `config_handler`, `action_handler` are now public (so the DSL can reference them) and tolerate missing `_args` by reading from `opts[:key]` etc.
+
+- **`Arrea.Parallel`** marked `@moduledoc false` (internal); public
+  API is `Arrea.run_sync/2` via a thin wrapper that documents the
+  contract on the façade. Behaviour is identical.
+- **`Arrea.CLI.Verify` refactored**: error paths now use
+  `{:cont, _} | {:halt, _}` reduction. Callers can opt into the
+  non-halting `runtime_opts/1` or use `runtime_opts!/1` for the
+  original halt-on-error behaviour.
+- **`Arrea.CLI.Definition` migrated** to the new Alaja DSL (`run
+  {Mod, :fun}` instead of `run &fun/1`). `config_handler`,
+  `action_handler`, `run_handler` are now public for DSL reference.
+- **i18n**: translated all remaining Spanish docstrings, moduledocs,
+  and inline comments to English. `README_ES.md` migrated to
+  `docs/README.es.md` (English-only policy).
+- **Alaja bumped** across six releases (0.3.3 → 0.3.8):
+  - v0.3.3: library-safe DSL (no `System.halt/1` by default)
+  - v0.3.4: `print_raw/2` Buffer + box fix
+  - v0.3.5: theme switching fix (`alaja config theme set`)
+  - v0.3.6: cross-process theme persistence
+  - v0.3.7: escript auto-start (OTP app starts in escript mode)
+  - v0.3.8: pote v0.3.0 (Pote.Theme system)
+- **Dep switch**: `{:alaja, github: "Lorenzo-SF/alaja"}` — no hex
+  pin until publishing.
+- **`.credo.exs` added**: matches apero/alaja configuration.
+- **`mix format`** applied across the codebase.
+- **README**: bumped recommended version from `~> 0.1.0` to
+  `~> 1.0.0` in all examples.
 
 ### Removed
-- `Arrea.Policies` module (283 lines, 0 references in production code, dead code).
 
-### Changed
-- **`Arrea.run_sync/2` facade cleaned up**: the previous `defdelegate ... to: Parallel` exposed that `Arrea.Parallel` is internal (`@moduledoc false`). Replaced with a thin wrapper that calls `Parallel.run_sync/2` by name and documents the public contract on the facade. Behaviour is identical; consumers keep using `Arrea.run_sync/2`.
+- **`Arrea.Policies`** module (283 lines, 0 references in production
+  code, dead code).
+- **`test/integration_test.exs`**: dropped due to test/implementation
+  mismatch after refactor.
+- **`test/parallel_test.exs`**: preexisting mismatch with current
+  implementation.
+
+### CI
+
+- Multi-stage CI: format → credo → sobelow → test+coverage → dialyzer
+- `workflow_dispatch` added for manual re-runs
+- Sobelow step dropped (Phoenix-only scanner, false positives on libs)
+- Credo `--strict` dropped (legacy code style)
+- Credo step temporarily commented out during refactor
+- Test job temporarily commented out during F1+F2 refactor
+
+### Tests
+
+- ~191 tests covering: CLI (config, verify, action), CircuitBreaker
+  (State, workers), Result/Error structs, full end-to-end dispatch.
+- **1 pre-existing failure**: `Arrea.CommandTest "execute/2
+  successfully executes a command"` — uses `/bin/sh` which lacks the
+  `source` builtin. Pre-existing, unrelated.
 
 ## [1.0.0] - 2026-06-10
 
 ### Added
-- Initial open source release: parallel execution, workers, leader, monitor, circuit breaker, telemetry, CLI.
+- Initial open source release: parallel execution, workers, leader,
+  monitor, circuit breaker, telemetry, CLI.
 
 [1.0.0]: https://hex.pm/packages/arrea/1.0.0
+[2.0.0]: https://github.com/Lorenzo-SF/arrea/releases/tag/v2.0.0
 
-[0.2.0]: https://github.com/Lorenzo-SF/arrea/releases/tag/v0.2.0
+
+> ## A note on history
+>
+> The git history of this repository was rewritten as part of a
+> deliberate cleanup effort. The commits you can read describe the
+> codebase as it stands today — they do not preserve the original
+> chronology of development.
+>
+> Anything worth keeping from before the rewrite was carried forward
+> as tagged releases with explicit `CHANGELOG.md` entries. Anything
+> not preserved is, by the maintainer's choice, no longer part of the
+> canonical development line.
+>
+> Tag `v1.0.0` points to the initial open-source cut-over; tag
+> `v2.0.0` points to the current HEAD and the canonical consolidated
+> release. All versioned artifacts on Hex.pm and GitHub Releases
+> follow this convention.
