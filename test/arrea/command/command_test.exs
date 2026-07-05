@@ -75,4 +75,28 @@ defmodule Arrea.CommandTest do
                Command.parse_result(%{exit_code: 1, stdout: "", duration_ms: 10})
     end
   end
+
+  describe "command_exists?/1 and which/1" do
+    test "command_exists?/1 returns true for a known binary" do
+      assert Command.command_exists?("echo")
+    end
+
+    test "command_exists?/1 returns false for a non-existent binary" do
+      refute Command.command_exists?("definitely_not_a_real_binary_12345")
+    end
+
+    test "command_exists?/1 returns false for empty/garbage input" do
+      refute Command.command_exists?("")
+      refute Command.command_exists?(nil)
+      refute Command.command_exists?(42)
+    end
+
+    test "which/1 returns a path for a known binary" do
+      assert is_binary(Command.which("echo"))
+    end
+
+    test "which/1 returns nil for a non-existent binary" do
+      assert Command.which("definitely_not_a_real_binary_12345") == nil
+    end
+  end
 end

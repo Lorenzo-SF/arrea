@@ -136,6 +136,49 @@ defmodule Arrea.Command do
   end
 
   @doc """
+  Returns `true` if the given command exists in the system `PATH`.
+
+  Thin wrapper around `System.find_executable/1` exposed publicly so
+  consumers (Apero.Proc, Botica.Batteries.*) don't have to redefine it
+  and can centralise the lookup through Arrea for future observability.
+
+  ## Examples
+
+      iex> Arrea.Command.command_exists?("echo")
+      true
+
+      iex> Arrea.Command.command_exists?("definitely_not_a_real_binary_12345")
+      false
+  """
+  @spec command_exists?(String.t()) :: boolean()
+  def command_exists?(cmd) when is_binary(cmd) and byte_size(cmd) > 0 do
+    System.find_executable(cmd) != nil
+  end
+
+  def command_exists?(_), do: false
+
+  @doc """
+  Returns the full path of a command if found in `PATH`, or `nil`.
+
+  Counterpart to the POSIX `which(1)` command. Wraps
+  `System.find_executable/1` for consistency with `command_exists?/1`.
+
+  ## Examples
+
+      iex> Arrea.Command.which("echo")
+      "/usr/bin/echo"
+
+      iex> Arrea.Command.which("not_a_real_binary_12345")
+      nil
+  """
+  @spec which(String.t()) :: String.t() | nil
+  def which(cmd) when is_binary(cmd) and byte_size(cmd) > 0 do
+    System.find_executable(cmd)
+  end
+
+  def which(_), do: nil
+
+  @doc """
   Executes a command string synchronously with optional configuration.
 
   The command is validated before execution unless `:validate` is set to
