@@ -138,8 +138,9 @@ defmodule Arrea.Command do
   @doc """
   Executes a command string synchronously with optional configuration.
 
-  The command is validated before execution. Invalid or dangerous commands
-  return `{:error, reason}` without executing anything.
+  The command is validated before execution unless `:validate` is set to
+  `false`. Invalid or dangerous commands return `{:error, reason}`
+  without executing anything.
 
   The timeout is **real**: if the command does not finish within the
   limit, the execution process is actively cancelled (not post-hoc).
@@ -152,6 +153,9 @@ defmodule Arrea.Command do
   - `:shell_config` — Path to the shell configuration file to load (optional)
   - `:env` — Additional environment variables as a map (optional)
   - `:quiet` — If true, suppress stderr capture (default: false)
+  - `:validate` — Run the safety validator before execution (default: `true`).
+    Set to `false` for trusted internal callers (e.g. Apero's OS info commands)
+    that would otherwise pay the per-call validation cost or hit false positives.
   - `:asdf_elixir` — Force Elixir version via asdf/mise
   - `asdf_<lang>` — Force any language version via asdf/mise
   - `mise_<lang>` — Force version via `mise exec`
@@ -164,13 +168,13 @@ defmodule Arrea.Command do
   """
   @spec execute(String.t(), keyword()) :: {:ok, result()} | {:error, term()}
   def execute(cmd, opts \\ []) do
-    with {:ok, validated_cmd} <- Validator.validate_command(cmd) do
+    with :ok <- maybe_validate(cmd, opts) do
       shell = resolve_shell(opts)
       opts = enrich_opts(opts, shell)
       timeout = Keyword.get(opts, :timeout, @default_timeout)
       cd = Keyword.get(opts, :cd, ".")
       env = build_env(opts)
-      full_cmd = build_full_command(validated_cmd, opts)
+      full_cmd = build_full_command(cmd, opts)
 
       do_execute(shell, full_cmd, cd, env, timeout)
     end
@@ -201,6 +205,21 @@ defmodule Arrea.Command do
   @spec parse_result(result()) :: {:ok, result()} | {:error, {:exit_code, non_neg_integer()}}
   def parse_result(%{exit_code: 0} = result), do: {:ok, result}
   def parse_result(%{exit_code: code} = _result), do: {:error, {:exit_code, code}}
+
+  # Runs `Arrea.Validation.Validator.validate_command/1` unless the caller
+  # passed `:validate, false`. Trusted internal callers (e.g. Apero's info
+  # commands) can opt out to avoid the per-call cost.
+  @spec maybe_validate(String.t(), keyword()) :: :ok | {:error, term()}
+  defp maybe_validate(cmd, opts) do
+    if Keyword.get(opts, :validate, true) do
+      case Validator.validate_command(cmd) do
+        {:ok, _} -> :ok
+        {:error, _} = err -> err
+      end
+    else
+      :ok
+    end
+  end
 
   # ── Internal execution ─────────────────────────────────────────────────────
 

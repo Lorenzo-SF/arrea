@@ -43,6 +43,17 @@ defmodule Arrea.CommandTest do
 
       assert String.trim(result.stdout) == "foo"
     end
+
+    test "rejects dangerous commands by default" do
+      assert {:error, {:dangerous_command, "rm -rf"}} = Command.execute("rm -rf /tmp")
+    end
+
+    test ":validate, false bypasses the safety check for trusted callers" do
+      # The string would normally be rejected as dangerous, but with
+      # :validate, false it runs (echo is harmless).
+      assert {:ok, result} = Command.execute("echo bypassed", validate: false)
+      assert String.trim(result.stdout) == "bypassed"
+    end
   end
 
   describe "execute_with_asdf/4" do
