@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`:validate` opt-out** on `Arrea.execute/2` and `Arrea.Command.execute/2`.
+  `Arrea.Command.execute/2` validates by default (preserves prior
+  behaviour); set `:validate, false` for trusted internal callers that
+  want to skip the per-call cost (e.g. `Apero.OS` info commands).
+  `Arrea.execute/2` does not validate by default (preserves prior
+  behaviour); opt in with `:validate, true`.
+- **`Arrea.Command.command_exists?/1`** and **`Arrea.Command.which/1`** —
+  public wrappers around `System.find_executable/1` so consumers
+  (`Apero.Proc`, `Botica.Batteries.*`) can stop redefining the lookup
+  locally. Centralising through Arrea opens the door to later
+  `[:arrea, :command, :lookup]` telemetry without further refactors.
+- **`Arrea.LongRunning`** — new GenServer-based wrapper around
+  `Port.open/2` for long-lived OS processes (LLM servers, dev
+  databases, message brokers). Provides `start_link/1`, `start/1`
+  (supervised under `Arrea.WorkerSupervisor`), `stop/1`, `health/1`
+  (optional probe), `write/2`, `state/1`. Registers in
+  `Arrea.Registry` and emits `[:arrea, :long_running, ...]` telemetry.
+- **Granular sudo allowlist** — `Arrea.Validation.Rules.safe_command/1`
+  now consults `Config.get(:sudo_allowlist, [])` for per-prefix
+  exemptions. With
+  `config :arrea, :engine, sudo_allowlist: ["systemctl start"]` the
+  command `sudo systemctl start postgresql` is accepted while
+  `sudo rm -rf /` still fails on the `rm -rf` pattern (other dangerous
+  patterns are never overridable).
+
+### Notes
+- The aspirational `v0.2.0`, `v0.3.0`, …, `v0.3.7` tags were deleted
+  from local and remote. They were internal dev tags pinning to
+  early `alaja` versions and never corresponded to public releases.
+  The canonical tags are now `1.0.0` (initial open-source cut-over)
+  and `v2.0.0` (current HEAD).
+
 ## [2.0.0] - 2026-07-05
 
 This release consolidates everything between 1.0.0 and the current
@@ -135,7 +168,18 @@ maintained and have been collapsed into this single canonical entry.
 > not preserved is, by the maintainer's choice, no longer part of the
 > canonical development line.
 >
-> Tag `v1.0.0` points to the initial open-source cut-over; tag
+> Tag `1.0.0` points to the initial open-source cut-over; tag
 > `v2.0.0` points to the current HEAD and the canonical consolidated
 > release. All versioned artifacts on Hex.pm and GitHub Releases
 > follow this convention.
+
+
+> ## A note on versioning
+>
+> The canonical tags are `1.0.0` (initial open-source cut-over) and
+> `v2.0.0` (current HEAD). No other tags exist: any `v0.X.Y` tags
+> previously seen on remote were internal dev tags pinned to early
+> `alaja` versions and have been deleted. `mix.exs` `version`
+> reflects the current development state and may be ahead of the
+> public surface. Pin to `1.0.0` or `v2.0.0` for stable dependencies;
+> new tags will appear here once a release ships.
