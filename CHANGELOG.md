@@ -169,7 +169,7 @@ maintained and have been collapsed into this single canonical entry.
 > canonical development line.
 >
 > Tag `1.0.0` points to the initial open-source cut-over; tag
-> `v2.0.0` points to the current HEAD and the canonical consolidated
+> `2.0.0` points to the current HEAD and the canonical consolidated
 > release. All versioned artifacts on Hex.pm and GitHub Releases
 > follow this convention.
 
@@ -177,9 +177,9 @@ maintained and have been collapsed into this single canonical entry.
 > ## A note on versioning
 >
 > The canonical tags are `1.0.0` (initial open-source cut-over) and
-> `v2.0.0` (current HEAD). No other tags exist: any `v0.X.Y` tags
+> `2.0.0` (current HEAD). No other tags exist: any `v0.X.Y` tags
 > previously seen on remote were internal dev tags pinned to early
 > `alaja` versions and have been deleted. `mix.exs` `version`
 > reflects the current development state and may be ahead of the
-> public surface. Pin to `1.0.0` or `v2.0.0` for stable dependencies;
+> public surface. Pin to `1.0.0` or `2.0.0` for stable dependencies;
 > new tags will appear here once a release ships.
