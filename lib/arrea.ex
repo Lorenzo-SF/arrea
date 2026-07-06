@@ -60,11 +60,13 @@ defmodule Arrea do
 
   alias Arrea.Config, as: Config
   alias Arrea.{Leader, Monitor, Parallel}
+  alias Arrea.Validation.Validator
 
   @type execution_option ::
           {:workers, non_neg_integer()}
           | {:timeout, non_neg_integer()}
           | {:retry, boolean()}
+          | {:validate, boolean()}
 
   @doc """
   Returns the maximum number of workers configured.
@@ -87,6 +89,11 @@ defmodule Arrea do
       - `:timeout` — Timeout in ms (default `30_000`). Real timeout: cancels execution.
       - `:retry` — Whether to retry on failure
       - `:shell` — Shell to use (highest priority over config and environment)
+      - `:validate` — Run safety validation before executing (default `false`).
+        Set to `true` to reject dangerous commands (`:rm -rf`, `:sudo `, etc.)
+        before they run. Disabled by default to preserve prior behaviour;
+        trusted internal callers (e.g. Apero's info commands) can keep the
+        default and pay no per-call cost.
 
   ## Returns
 
@@ -100,10 +107,19 @@ defmodule Arrea do
 
       iex> Arrea.execute(fn -> :work end)
       {:ok, %Arrea.Result{success: true, data: :work, failures: []}}
+
+      iex> Arrea.execute("rm -rf /tmp", validate: true)
+      {:error, %Arrea.Error{code: :validation_failed, message: "{:dangerous_command, \\"rm -rf\\"}"}}
   """
   @spec execute(binary() | (-> term()), [execution_option()]) ::
           {:ok, Arrea.Result.t()} | {:error, Arrea.Error.t()}
   def execute(cmd, opts \\ []) when is_binary(cmd) or is_function(cmd, 0) do
+    with :ok <- maybe_validate_cmd(cmd, opts) do
+      do_execute(cmd, opts)
+    end
+  end
+
+  defp do_execute(cmd, opts) do
     start_time = System.monotonic_time()
 
     :telemetry.execute(
@@ -144,6 +160,32 @@ defmodule Arrea do
     :exit, reason ->
       {:error, %Arrea.Error{code: :process_exited, message: inspect(reason)}}
   end
+
+  # Runs `Validator.validate_command/1` for binary commands when the caller
+  # passed `:validate, true`. Default `false` to preserve the historical
+  # behaviour of `Arrea.execute/2` (only batch `Arrea.run/2` validated).
+  # Functions and the default path skip validation entirely.
+  @spec maybe_validate_cmd(binary() | (-> term()), keyword()) ::
+          :ok | {:error, Arrea.Error.t()}
+  defp maybe_validate_cmd(cmd, opts) when is_binary(cmd) do
+    if Keyword.get(opts, :validate, false) do
+      case Validator.validate_command(cmd) do
+        {:ok, _} ->
+          :ok
+
+        {:error, reason} ->
+          {:error,
+           %Arrea.Error{
+             code: :validation_failed,
+             message: inspect(reason)
+           }}
+      end
+    else
+      :ok
+    end
+  end
+
+  defp maybe_validate_cmd(_fun, _opts), do: :ok
 
   @doc """
   Executes multiple commands in parallel.
