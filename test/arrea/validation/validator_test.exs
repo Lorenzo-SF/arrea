@@ -105,4 +105,53 @@ defmodule Arrea.Validation.ValidatorTest do
       assert Validator.validate_shell("powershell") == {:error, {:disallowed_shell, "powershell"}}
     end
   end
+
+  describe "sudo allowlist" do
+    setup do
+      # Each test sets a fresh allowlist and restores the original on exit.
+      original = Application.get_env(:arrea, :engine, [])
+      on_exit(fn -> Application.put_env(:arrea, :engine, original) end)
+      :ok
+    end
+
+    test "rejects sudo by default" do
+      assert Validator.validate_command("sudo systemctl start postgresql") ==
+               {:error, {:dangerous_command, "sudo "}}
+    end
+
+    test "rejects sudo rm -rf even with allowlist (other dangerous patterns still apply)" do
+      Application.put_env(:arrea, :engine, sudo_allowlist: ["systemctl start"])
+
+      assert Validator.validate_command("sudo rm -rf /") ==
+               {:error, {:dangerous_command, "rm -rf"}}
+    end
+
+    test "accepts sudo commands whose payload matches an allowlisted prefix" do
+      Application.put_env(:arrea, :engine, sudo_allowlist: ["systemctl start"])
+
+      assert Validator.validate_command("sudo systemctl start postgresql") ==
+               {:ok, "sudo systemctl start postgresql"}
+    end
+
+    test "matches the longest applicable prefix first" do
+      Application.put_env(:arrea, :engine, sudo_allowlist: ["systemctl"])
+
+      assert Validator.validate_command("sudo systemctl restart redis") ==
+               {:ok, "sudo systemctl restart redis"}
+    end
+
+    test "still rejects sudo commands outside the allowlist" do
+      Application.put_env(:arrea, :engine, sudo_allowlist: ["systemctl start"])
+
+      assert Validator.validate_command("sudo apt install nginx") ==
+               {:error, {:dangerous_command, "sudo "}}
+    end
+
+    test "empty allowlist behaves like no allowlist" do
+      Application.put_env(:arrea, :engine, sudo_allowlist: [])
+
+      assert Validator.validate_command("sudo systemctl start postgresql") ==
+               {:error, {:dangerous_command, "sudo "}}
+    end
+  end
 end

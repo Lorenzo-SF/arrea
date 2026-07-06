@@ -43,6 +43,17 @@ defmodule Arrea.CommandTest do
 
       assert String.trim(result.stdout) == "foo"
     end
+
+    test "rejects dangerous commands by default" do
+      assert {:error, {:dangerous_command, "rm -rf"}} = Command.execute("rm -rf /tmp")
+    end
+
+    test ":validate, false bypasses the safety check for trusted callers" do
+      # The string would normally be rejected as dangerous, but with
+      # :validate, false it runs (echo is harmless).
+      assert {:ok, result} = Command.execute("echo bypassed", validate: false)
+      assert String.trim(result.stdout) == "bypassed"
+    end
   end
 
   describe "execute_with_asdf/4" do
@@ -62,6 +73,30 @@ defmodule Arrea.CommandTest do
     test "parses non-zero as error" do
       assert {:error, {:exit_code, 1}} =
                Command.parse_result(%{exit_code: 1, stdout: "", duration_ms: 10})
+    end
+  end
+
+  describe "command_exists?/1 and which/1" do
+    test "command_exists?/1 returns true for a known binary" do
+      assert Command.command_exists?("echo")
+    end
+
+    test "command_exists?/1 returns false for a non-existent binary" do
+      refute Command.command_exists?("definitely_not_a_real_binary_12345")
+    end
+
+    test "command_exists?/1 returns false for empty/garbage input" do
+      refute Command.command_exists?("")
+      refute Command.command_exists?(nil)
+      refute Command.command_exists?(42)
+    end
+
+    test "which/1 returns a path for a known binary" do
+      assert is_binary(Command.which("echo"))
+    end
+
+    test "which/1 returns nil for a non-existent binary" do
+      assert Command.which("definitely_not_a_real_binary_12345") == nil
     end
   end
 end

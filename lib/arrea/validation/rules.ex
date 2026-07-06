@@ -7,6 +7,8 @@ defmodule Arrea.Validation.Rules do
   `with` chains.
   """
 
+  alias Arrea.Config
+
   @dangerous_commands [
     "rm -rf",
     "rm -r /",
@@ -73,12 +75,21 @@ defmodule Arrea.Validation.Rules do
 
   @doc """
   Valida que un comando no coincida con ningun patron peligroso conocido.
+
+  Honours `Config.get(:sudo_allowlist, [])` for granular sudo exemptions.
+  When the dangerous match is the `"sudo "` pattern, the part of the
+  command after `"sudo "` is checked against the allowlist (list of
+  prefixes). If it starts with any allowlisted prefix, the command is
+  accepted even though it contains `"sudo "`. Other dangerous patterns
+  (`rm -rf`, `dd if=`, etc.) are never overridable.
   """
   @spec safe_command(String.t()) :: {:ok, String.t()} | {:error, {:dangerous_command, String.t()}}
   def safe_command(cmd) do
+    cmd_lower = String.downcase(cmd)
+
     dangerous =
       Enum.find(@dangerous_commands, fn pattern ->
-        String.contains?(String.downcase(cmd), pattern)
+        String.contains?(cmd_lower, pattern) and not sudo_whitelisted?(pattern, cmd_lower)
       end)
 
     case dangerous do
@@ -86,6 +97,27 @@ defmodule Arrea.Validation.Rules do
       found -> {:error, {:dangerous_command, found}}
     end
   end
+
+  # Returns true when the matched dangerous pattern is "sudo " and the
+  # part of the command after "sudo " starts with any allowlisted prefix.
+  # The check is purely string-based — the allowlist is a list of literal
+  # prefixes like ["systemctl start", "systemctl restart"].
+  @spec sudo_whitelisted?(String.t(), String.t()) :: boolean()
+  defp sudo_whitelisted?("sudo ", cmd_lower) do
+    case String.split(cmd_lower, "sudo ", parts: 2) do
+      [_, suffix] ->
+        allowlist = Config.get(:sudo_allowlist, [])
+
+        Enum.any?(allowlist, fn prefix ->
+          String.starts_with?(String.trim(suffix), prefix)
+        end)
+
+      _ ->
+        false
+    end
+  end
+
+  defp sudo_whitelisted?(_, _), do: false
 
   @doc """
   Valida que el shell este en la lista de shells permitidos.
