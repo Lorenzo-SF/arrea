@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-07-07
+
 ### Added
 - **`:validate` opt-out** on `Arrea.execute/2` and `Arrea.Command.execute/2`.
   `Arrea.Command.execute/2` validates by default (preserves prior
@@ -33,12 +35,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `sudo rm -rf /` still fails on the `rm -rf` pattern (other dangerous
   patterns are never overridable).
 
+### Changed
+- **`alaja` dep tracking**: `{:alaja, github: "Lorenzo-SF/alaja"}` —
+  tracking `main` instead of pinning to a Hex release. Aligns arrea
+  with the rest of the Lorenzo-SF/* ecosystem (apero, candil, botica
+  all use `branch: "main"` for cross-repo deps).
+- **CHANGELOG**: drop `v` prefix from tag references in the "A note on
+  history" and "A note on versioning" footers to match the canonical
+  tag convention (no `v` prefix on this repo).
+
 ### Notes
 - The aspirational `v0.2.0`, `v0.3.0`, …, `v0.3.7` tags were deleted
   from local and remote. They were internal dev tags pinning to
   early `alaja` versions and never corresponded to public releases.
-  The canonical tags are now `1.0.0` (initial open-source cut-over)
-  and `v2.0.0` (current HEAD).
+  The canonical tags are now `1.0.0` (initial open-source cut-over),
+  `2.0.0`, and `2.1.0` (current HEAD).
 
 ## [2.0.0] - 2026-07-05
 
@@ -152,6 +163,7 @@ maintained and have been collapsed into this single canonical entry.
 - Initial open source release: parallel execution, workers, leader,
   monitor, circuit breaker, telemetry, CLI.
 
+[2.1.0]: https://hex.pm/packages/arrea/2.1.0
 [1.0.0]: https://hex.pm/packages/arrea/1.0.0
 [2.0.0]: https://github.com/Lorenzo-SF/arrea/releases/tag/v2.0.0
 
