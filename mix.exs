@@ -99,7 +99,7 @@ defmodule Arrea.MixProject do
 
   defp deps do
     [
-      {:alaja, "~> 2.1.0"},
+      {:alaja, "~> 2.3.0"},
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.3"},
       {:telemetry_metrics, "~> 1.1"},
