@@ -4,7 +4,7 @@ defmodule Arrea.MixProject do
   def project do
     [
       app: :arrea,
-      version: "2.1.0",
+      version: "2.2.0",
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -99,7 +99,7 @@ defmodule Arrea.MixProject do
 
   defp deps do
     [
-      {:alaja, path: "../alaja"},
+      {:alaja, "~> 2.3.0"},
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.3"},
       {:telemetry_metrics, "~> 1.1"},
