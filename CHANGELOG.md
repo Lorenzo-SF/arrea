@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`Arrea.Registry`** — helper module with `all/0`, `count/0`, and
+  `lookup/1` to query the Elixir Registry for registered workers.
+- **`arrea nodes`** — new CLI command that lists registered dynamic
+  workers with their PIDs.
+
 ## [2.1.0] - 2026-07-07
 
 ### Added

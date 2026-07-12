@@ -160,4 +160,9 @@ defmodule Arrea.CLI.Definition do
 
     run({Arrea.CLI.Definition, :action_handler})
   end
+
+  command "nodes", "Show registered dynamic workers" do
+    run({Arrea.CLI.Commands.Nodes, :execute})
+  end
+
 end
