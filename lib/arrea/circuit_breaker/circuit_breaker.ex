@@ -133,8 +133,14 @@ defmodule Arrea.CircuitBreaker do
   def init(opts) do
     {:ok,
      %State{
-       threshold: Keyword.get(opts, :threshold, 5),
-       timeout: Keyword.get(opts, :timeout, 60_000)
+       threshold:
+         Keyword.get(opts, :threshold, Application.get_env(:arrea, :circuit_breaker_threshold, 5)),
+       timeout:
+         Keyword.get(
+           opts,
+           :timeout,
+           Application.get_env(:arrea, :circuit_breaker_timeout, 60_000)
+         )
      }}
   end
 
@@ -144,9 +150,9 @@ defmodule Arrea.CircuitBreaker do
   @impl true
   def handle_call(:get_full_state, _from, state), do: {:reply, state, state}
 
-  # Toma la decisión de permitir o bloquear de forma atómica.
-  # Si el circuito está abierto y el timeout expiró, transiciona a half_open
-  # y permite un intento de ejecución.
+  # Atomically decide to allow or block execution.
+  # When the circuit is open and the timeout has expired, transition to
+  # half_open and allow one trial execution.
   @impl true
   def handle_call(:get_state_and_check, _from, state) do
     case state.state do

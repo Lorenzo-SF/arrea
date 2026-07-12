@@ -123,13 +123,13 @@ defmodule Arrea.Worker do
     monitor_ok =
       case safe_register_worker(id, state) do
         :ok ->
-          if log?, do: Logger.debug("[Worker #{inspect(id)}] Registrado en Monitor")
+          if log?, do: Logger.debug("[Worker #{inspect(id)}] Registered in Monitor")
           true
 
         {:error, reason} ->
           if log? do
             Logger.warning(
-              "[Worker #{inspect(id)}] No se pudo registrar en Monitor: #{inspect(reason)}"
+              "[Worker #{inspect(id)}] Failed to register in Monitor: #{inspect(reason)}"
             )
           end
 
@@ -201,12 +201,12 @@ defmodule Arrea.Worker do
 
     if state.log? do
       Logger.info(
-        "[Worker #{inspect(state.id)}] Terminado: #{inspect(format_terminate_reason(reason))}"
+        "[Worker #{inspect(state.id)}] Terminated: #{inspect(format_terminate_reason(reason))}"
       )
     end
 
-    # Solo notifica al Monitor si el worker no terminó por su propio flujo.
-    # Cuando handle_task_success o notify_error_and_stop ya llamaron a
+    # Only notify the Monitor if the worker did not finish through its own flow.
+    # When handle_task_success or notify_error_and_stop already called
     # safe_worker_finished, el estado tiene status :finished o :error.
     # This prevents double counting in the Monitor statistics.
     unless state.status in [:finished, :error] do
@@ -350,11 +350,11 @@ defmodule Arrea.Worker do
     :ok
   rescue
     e ->
-      Logger.warning("[Worker] Monitor call failed: #{inspect(e)}")
+      Logger.error("[Worker] Monitor call failed: #{inspect(e)} — worker stats may be stale")
       :ok
   catch
     :exit, reason ->
-      Logger.warning("[Worker] Monitor call exited: #{inspect(reason)}")
+      Logger.error("[Worker] Monitor call exited: #{inspect(reason)} — worker stats may be stale")
       :ok
   end
 

@@ -11,7 +11,8 @@ defmodule Arrea.Registry do
   @doc "Return a map of registered worker names and their PIDs."
   @spec all() :: %{atom() => pid()}
   def all do
-    Registry.select(@registry_name,
+    Registry.select(
+      @registry_name,
       [
         {{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$2"}}]}
       ]
@@ -22,7 +23,8 @@ defmodule Arrea.Registry do
   @doc "Return the number of entries in the registry."
   @spec count() :: non_neg_integer()
   def count do
-    Registry.select(@registry_name,
+    Registry.select(
+      @registry_name,
       [
         {{:"$1", :"$2", :"$3"}, [], [{{:"$1"}}]}
       ]
@@ -31,7 +33,7 @@ defmodule Arrea.Registry do
   end
 
   @doc "Return a list of PID(s) for the given key."
-  @spec lookup(atom()) :: [pid()]
+  @spec lookup(atom()) :: [{pid(), term()}]
   def lookup(key) do
     Registry.lookup(@registry_name, key)
   end

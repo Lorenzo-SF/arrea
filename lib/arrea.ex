@@ -168,7 +168,7 @@ defmodule Arrea do
   @spec maybe_validate_cmd(binary() | (-> term()), keyword()) ::
           :ok | {:error, Arrea.Error.t()}
   defp maybe_validate_cmd(cmd, opts) when is_binary(cmd) do
-    if Keyword.get(opts, :validate, false) do
+    if Keyword.get(opts, :validate, true) do
       case Validator.validate_command(cmd) do
         {:ok, _} ->
           :ok

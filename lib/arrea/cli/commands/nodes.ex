@@ -10,6 +10,7 @@ defmodule Arrea.CLI.Commands.Nodes do
   @doc false
   def execute(_opts) do
     workers = Registry.all()
+
     rows =
       workers
       |> Enum.map(fn {name, pid} -> [Atom.to_string(name), inspect(pid)] end)
@@ -17,12 +18,14 @@ defmodule Arrea.CLI.Commands.Nodes do
     IO.puts("")
     Header.print("Registered Workers", subtitle: "#{map_size(workers)} workers", size: :small)
     IO.puts("")
+
     Table.print(
       headers: ["Name", "PID"],
       rows: rows,
       table_border: :rounded,
       padding: 1
     )
+
     IO.puts("")
   end
 

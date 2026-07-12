@@ -29,9 +29,9 @@ defmodule Arrea.MixProject do
   def application do
     [
       extra_applications: [:logger],
-      # Arrea arranca su árbol de supervisión automáticamente al incluirse
-      # como dependencia. No es necesario llamar a Arrea.Supervisor.start_link/1
-      # manualmente en el proyecto consumidor.
+      # Arrea starts its supervision tree automatically when included
+      # as a dependency. Callers do not need to call Arrea.Supervisor.start_link/1
+      # manually.
       mod: {Arrea.Application, []}
     ]
   end
