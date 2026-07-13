@@ -1,4 +1,6 @@
 defmodule Arrea.LongRunning do
+  alias Arrea.Telemetry.Events, as: TE
+
   @moduledoc """
   Supervisor-backed wrapper around `Port.open/2` for long-running OS processes.
 
@@ -198,11 +200,7 @@ defmodule Arrea.LongRunning do
       :persistent_term.put({__MODULE__, self(), :health}, health_fn)
     end
 
-    :telemetry.execute(
-      [:arrea, :long_running, :started],
-      %{},
-      %{id: id, binary: binary, pid: self()}
-    )
+    TE.emit_long_running(:started, %{}, %{id: id, binary: binary, pid: self()})
 
     {:ok, state}
   end
@@ -234,31 +232,19 @@ defmodule Arrea.LongRunning do
 
   @impl true
   def handle_info({port, {:data, data}}, %{port: port} = state) do
-    :telemetry.execute(
-      [:arrea, :long_running, :data],
-      %{bytes: byte_size(data)},
-      %{id: state.id, data: data}
-    )
+    TE.emit_long_running(:data, %{bytes: byte_size(data)}, %{id: state.id, data: data})
 
     {:noreply, state}
   end
 
   def handle_info({port, {:exit_status, code}}, %{port: port} = state) do
-    :telemetry.execute(
-      [:arrea, :long_running, :stopped],
-      %{},
-      %{id: state.id, exit_code: code}
-    )
+    TE.emit_long_running(:stopped, %{}, %{id: state.id, exit_code: code})
 
     {:stop, {:exit_status, code}, %{state | port: nil}}
   end
 
   def handle_info({:EXIT, port, reason}, %{port: port} = state) do
-    :telemetry.execute(
-      [:arrea, :long_running, :crashed],
-      %{},
-      %{id: state.id, reason: reason}
-    )
+    TE.emit_long_running(:crashed, %{}, %{id: state.id, reason: reason})
 
     {:stop, reason, state}
   end

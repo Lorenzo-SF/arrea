@@ -114,4 +114,26 @@ defmodule Arrea.Telemetry.Events do
     :telemetry.execute(event, measurements, metadata)
     :ok
   end
+
+  @doc """
+  Emits an engine event.
+  Events follow the pattern `[:arrea, :engine, sub_category, type]`.
+  """
+  @spec emit_engine(atom(), atom(), map(), map()) :: :ok
+  def emit_engine(sub_category, type, measurements \\ %{}, metadata \\ %{}) do
+    event = [:arrea, :engine, sub_category, type]
+    :telemetry.execute(event, measurements, metadata)
+    :ok
+  end
+
+  @doc """
+  Emits a long_running engine event.
+  Events follow the pattern `[:arrea, :long_running, type]`.
+  """
+  @spec emit_long_running(atom(), map(), map()) :: :ok
+  def emit_long_running(type, measurements \\ %{}, metadata \\ %{}) do
+    event = [:arrea, :long_running, type]
+    :telemetry.execute(event, measurements, metadata)
+    :ok
+  end
 end

@@ -60,6 +60,7 @@ defmodule Arrea do
 
   alias Arrea.Config, as: Config
   alias Arrea.{Leader, Monitor, Parallel}
+  alias Arrea.Telemetry.Events, as: TE
   alias Arrea.Validation.Validator
 
   @type execution_option ::
@@ -122,11 +123,7 @@ defmodule Arrea do
   defp do_execute(cmd, opts) do
     start_time = System.monotonic_time()
 
-    :telemetry.execute(
-      [:arrea, :engine, :execute, :start],
-      %{},
-      %{command: safe_command_label(cmd)}
-    )
+    TE.emit_engine(:execute, :start, %{}, %{command: safe_command_label(cmd)})
 
     result = Parallel.execute(cmd, opts)
 
@@ -139,10 +136,9 @@ defmodule Arrea do
 
     case result do
       {:ok, r} ->
-        :telemetry.execute(
-          [:arrea, :engine, :execute, :stop],
-          %{duration: duration_ms},
-          %{command: safe_command_label(cmd), success: true}
+        TE.emit_engine(:execute, :stop, %{duration: duration_ms},
+          command: safe_command_label(cmd),
+          success: true
         )
 
         {:ok, %Arrea.Result{success: true, data: r, failures: []}}
@@ -213,19 +209,11 @@ defmodule Arrea do
   def run(commands, opts \\ []) when is_list(commands) do
     workers = Keyword.get(opts, :workers, max_workers())
 
-    :telemetry.execute(
-      [:arrea, :engine, :run, :start],
-      %{},
-      %{count: length(commands), workers: workers}
-    )
+    TE.emit_engine(:run, :start, %{}, %{count: length(commands), workers: workers})
 
     case Parallel.run(commands, opts) do
       {:ok, batch_id} ->
-        :telemetry.execute(
-          [:arrea, :engine, :run, :stop],
-          %{},
-          %{batch_id: batch_id}
-        )
+        TE.emit_engine(:run, :stop, %{}, %{batch_id: batch_id})
 
         {:ok,
          %Arrea.Result{
@@ -235,11 +223,7 @@ defmodule Arrea do
          }}
 
       {:ok, batch_id, info} ->
-        :telemetry.execute(
-          [:arrea, :engine, :run, :stop],
-          %{},
-          %{batch_id: batch_id, partial: true}
-        )
+        TE.emit_engine(:run, :stop, %{}, %{batch_id: batch_id, partial: true})
 
         {:ok,
          %Arrea.Result{
