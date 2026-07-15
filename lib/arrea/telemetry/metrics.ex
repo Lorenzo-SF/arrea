@@ -84,7 +84,7 @@ defmodule Arrea.Telemetry.Metrics do
       &__MODULE__.handle_circuit_breaker_trip/4
     )
 
-    Logger.info("[Arrea.Telemetry] Metrics configured successfully")
+    Logger.debug("[Arrea.Telemetry] Metrics configured successfully")
     :ok
   end
 
