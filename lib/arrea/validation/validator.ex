@@ -6,6 +6,7 @@ defmodule Arrea.Validation.Validator do
   de validation usados por `Arrea.Command` y la CLI.
   """
 
+  alias Arrea.Telemetry.Events, as: TE
   alias Arrea.Validation.Rules
 
   @type validation_error :: atom() | {atom(), term()}
@@ -30,10 +31,18 @@ defmodule Arrea.Validation.Validator do
   """
   @spec validate_command(String.t()) :: {:ok, String.t()} | {:error, validation_error()}
   def validate_command(cmd) do
-    with {:ok, cmd} <- Rules.not_empty(cmd),
-         {:ok, cmd} <- Rules.max_length(cmd, 4096),
-         {:ok, cmd} <- Rules.no_injection(cmd),
-         do: Rules.safe_command(cmd)
+    result =
+      with {:ok, cmd} <- Rules.not_empty(cmd),
+           {:ok, cmd} <- Rules.max_length(cmd, 4096),
+           {:ok, cmd} <- Rules.no_injection(cmd),
+           do: Rules.safe_command(cmd)
+
+    case result do
+      {:ok, _} -> TE.emit_validation(:passed, %{}, %{command: cmd})
+      {:error, reason} -> TE.emit_validation(:failed, %{}, %{command: cmd, reason: reason})
+    end
+
+    result
   end
 
   @doc """

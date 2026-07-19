@@ -38,6 +38,7 @@ defmodule Arrea.Worker do
 
   alias Arrea.Config
   alias Arrea.{Leader, Monitor, WorkerState}
+  alias Arrea.Telemetry.Events, as: TE
   alias Arrea.Telemetry.Metrics, as: TelemetryMetrics
 
   @doc """
@@ -136,6 +137,7 @@ defmodule Arrea.Worker do
           false
       end
 
+    TE.emit_worker(:started, %{}, %{worker_id: id, tasks_count: length(tasks)})
     notify_event(%{type: :worker_started, worker_id: id})
 
     if monitor_ok do
@@ -247,6 +249,7 @@ defmodule Arrea.Worker do
 
     if result_state.tasks == [] do
       ended_at = System.monotonic_time(:millisecond)
+      TE.emit_worker(:completed, %{}, %{worker_id: state.id, duration_ms: ended_at - state.started_at})
       notify_event(%{type: :finished, worker_id: state.id})
       safe_worker_finished(state.id, :success, ended_at)
       # status :finished marca que terminate/2 no debe re-notificar al Monitor
@@ -285,6 +288,7 @@ defmodule Arrea.Worker do
   end
 
   defp notify_error_and_stop(state, reason, new_state) do
+    TE.emit_worker(:error, %{}, %{worker_id: state.id, reason: reason})
     notify_event(%{type: :error, worker_id: state.id, reason: reason})
 
     if state.parent do
