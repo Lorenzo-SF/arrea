@@ -121,4 +121,20 @@ defmodule Arrea.LongRunningTest do
       assert_receive {:DOWN, ^ref, :process, ^pid, _reason}, 2_000
     end
   end
+
+  describe "cleanup" do
+    test "health function is cleaned up when process stops" do
+      {:ok, pid} =
+        LR.start_link(
+          id: :test_lr_cleanup,
+          binary: @binary,
+          health: fn -> true end
+        )
+
+      :ok = LR.stop(:test_lr_cleanup)
+      :timer.sleep(50)
+
+      refute Process.alive?(pid)
+    end
+  end
 end

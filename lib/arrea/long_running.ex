@@ -116,24 +116,29 @@ defmodule Arrea.LongRunning do
     case Registry.lookup(Arrea.Registry, id) do
       [{pid, _}] ->
         try do
-          health_fn = :persistent_term.get({__MODULE__, pid, :health}, nil)
-
-          if is_function(health_fn, 0) do
-            case health_fn.() do
-              truthy when truthy in [true, :ok] -> :ok
-              falsy -> {:error, falsy}
-            end
-          else
-            :ok
+          case GenServer.call(pid, :get_health) do
+            nil -> :ok
+            health_fn -> run_health(health_fn)
           end
         rescue
           e -> {:error, Exception.message(e)}
+        catch
+          :exit, _ -> :not_found
         end
 
       [] ->
         :not_found
     end
   end
+
+  defp run_health(health_fn) when is_function(health_fn, 0) do
+    case health_fn.() do
+      truthy when truthy in [true, :ok] -> :ok
+      falsy -> {:error, falsy}
+    end
+  end
+
+  defp run_health(_), do: :ok
 
   @doc """
   Writes `data` to the process stdin. Useful for inter-process protocols.
@@ -196,13 +201,9 @@ defmodule Arrea.LongRunning do
 
     :ok = register(id)
 
-    if is_function(health_fn, 0) do
-      :persistent_term.put({__MODULE__, self(), :health}, health_fn)
-    end
-
     TE.emit_long_running(:started, %{}, %{id: id, binary: binary, pid: self()})
 
-    {:ok, state}
+    {:ok, Map.put(state, :health_fn, health_fn)}
   end
 
   @impl true
@@ -216,6 +217,8 @@ defmodule Arrea.LongRunning do
         {:reply, :ok, state}
     end
   end
+
+  def handle_call(:get_health, _from, state), do: {:reply, state.health_fn, state}
 
   def handle_call(:state, _from, state) do
     snapshot = %{
@@ -256,7 +259,6 @@ defmodule Arrea.LongRunning do
 
   @impl true
   def terminate(_reason, state) do
-    :persistent_term.erase({__MODULE__, self(), :health})
     unregister(state.id)
     :ok
   end
