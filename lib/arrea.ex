@@ -136,10 +136,10 @@ defmodule Arrea do
 
     case result do
       {:ok, r} ->
-        TE.emit_engine(:execute, :stop, %{duration: duration_ms},
+        TE.emit_engine(:execute, :stop, %{duration: duration_ms}, %{
           command: safe_command_label(cmd),
           success: true
-        )
+        })
 
         {:ok, %Arrea.Result{success: true, data: r, failures: []}}
 
