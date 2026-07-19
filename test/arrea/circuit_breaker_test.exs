@@ -114,4 +114,21 @@ defmodule Arrea.CircuitBreakerTest do
     # should_retry? defaults to true for unregistered
     assert {:ok, :hello} = CircuitBreaker.call(unregistered_id, fn -> :hello end)
   end
+
+  test "exit in call is re-raised and counted as failure", %{test_id: test_id} do
+    spawn_monitor(fn ->
+      CircuitBreaker.call(test_id, fn -> Process.exit(self(), :kill) end)
+    end)
+
+    assert_receive {:DOWN, _, :process, _, :killed}, 100
+
+    Process.sleep(10)
+    assert CircuitBreaker.get_state(test_id) == :closed
+  end
+
+  test "exception in call returns error tuple", %{test_id: test_id} do
+    assert {:error, :execution_failed} = CircuitBreaker.call(test_id, fn -> raise "boom" end)
+    Process.sleep(10)
+    assert CircuitBreaker.get_state(test_id) == :closed
+  end
 end

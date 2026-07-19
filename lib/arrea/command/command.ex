@@ -358,6 +358,7 @@ defmodule Arrea.Command do
     opts
     |> Enum.filter(fn {key, _} -> key |> to_string() |> String.starts_with?("mise_") end)
     |> Enum.map(fn {key, version} ->
+      validate_version!(version)
       lang = key |> to_string() |> String.replace_prefix("mise_", "")
       "#{lang}@#{version}"
     end)
@@ -372,6 +373,7 @@ defmodule Arrea.Command do
       opts
       |> Enum.filter(fn {key, _} -> key |> to_string() |> String.starts_with?("asdf_") end)
       |> Enum.map(fn {key, version} ->
+        validate_version!(version)
         lang = key |> to_string() |> String.replace_prefix("asdf_", "")
         "export ASDF_#{String.upcase(lang)}_VERSION=#{version}"
       end)
@@ -441,4 +443,15 @@ defmodule Arrea.Command do
   end
 
   defp parse_passwd_shell(_), do: "/bin/sh"
+
+  @version_regex ~r/^[a-zA-Z0-9._-]+$/
+  defp validate_version!(version) when is_binary(version) do
+    unless Regex.match?(@version_regex, version) do
+      raise ArgumentError, "invalid version #{inspect(version)}"
+    end
+  end
+
+  defp validate_version!(version) do
+    raise ArgumentError, "invalid version #{inspect(version)}"
+  end
 end
