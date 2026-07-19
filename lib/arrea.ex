@@ -320,7 +320,7 @@ defmodule Arrea do
   # ── Helpers privados ──────────────────────────────────────────────────────
 
   @spec safe_command_label(binary() | function()) :: String.t()
-  defp safe_command_label(cmd) when is_binary(cmd), do: String.slice(cmd, 0, 100)
+  defp safe_command_label(cmd) when is_binary(cmd), do: String.slice(cmd, 0, 500)
 
   defp safe_command_label(fun) when is_function(fun),
     do: "function/#{:erlang.fun_info(fun)[:arity]}"
