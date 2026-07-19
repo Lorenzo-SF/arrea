@@ -69,6 +69,10 @@ defmodule Arrea.Command do
 
   @default_timeout 30_000
 
+  @known_languages ~w(elixir erlang node ruby python go rust java crystal)
+                   |> Enum.map(&{&1, :"asdf_#{&1}"})
+                   |> Map.new()
+
   @shell_configs %{
     "bash" => "~/.bashrc",
     "zsh" => "~/.zshrc",
@@ -236,8 +240,14 @@ defmodule Arrea.Command do
   @spec execute_with_asdf(String.t(), atom(), String.t(), keyword()) ::
           {:ok, result()} | {:error, term()}
   def execute_with_asdf(cmd, language, version, opts \\ []) do
-    lang_key = String.to_atom("asdf_#{language}")
-    execute(cmd, Keyword.put(opts, lang_key, version))
+    lang_str = to_string(language)
+    lang_key = Map.get(@known_languages, lang_str)
+
+    if lang_key do
+      execute(cmd, Keyword.put(opts, lang_key, version))
+    else
+      {:error, {:unknown_language, language}}
+    end
   end
 
   @doc """

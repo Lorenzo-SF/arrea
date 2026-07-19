@@ -216,7 +216,14 @@ defmodule Arrea.CircuitBreaker do
         # Se resetean también los éxitos acumulados para que el próximo
         # attempt starts from zero.
         state.state == :half_open ->
-          new = %{state | state: :open, failures: new_failures, successes: 0, last_failure_at: now_ms}
+          new = %{
+            state
+            | state: :open,
+              failures: new_failures,
+              successes: 0,
+              last_failure_at: now_ms
+          }
+
           emit(:open, new)
           new
 

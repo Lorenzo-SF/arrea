@@ -249,7 +249,12 @@ defmodule Arrea.Worker do
 
     if result_state.tasks == [] do
       ended_at = System.monotonic_time(:millisecond)
-      TE.emit_worker(:completed, %{}, %{worker_id: state.id, duration_ms: ended_at - state.started_at})
+
+      TE.emit_worker(:completed, %{}, %{
+        worker_id: state.id,
+        duration_ms: ended_at - state.started_at
+      })
+
       notify_event(%{type: :finished, worker_id: state.id})
       safe_worker_finished(state.id, :success, ended_at)
       # status :finished marca que terminate/2 no debe re-notificar al Monitor
