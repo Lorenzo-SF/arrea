@@ -432,9 +432,13 @@ defmodule Arrea.Leader do
         {1, 0, pid}
 
       {:error, reason} ->
-        Logger.warning(
-          "[Leader] Failed to start worker #{inspect(worker_id)}: #{inspect(reason)}"
-        )
+        log_msg =
+          case reason do
+            :max_children -> "max children reached for #{inspect(worker_id)}"
+            _ -> "failed to start worker #{inspect(worker_id)}: #{inspect(reason)}"
+          end
+
+        Logger.warning("[Leader] #{log_msg}")
 
         notify_event(%{
           type: :worker_error,

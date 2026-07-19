@@ -236,7 +236,7 @@ defmodule Arrea.Command do
   @spec execute_with_asdf(String.t(), atom(), String.t(), keyword()) ::
           {:ok, result()} | {:error, term()}
   def execute_with_asdf(cmd, language, version, opts \\ []) do
-    lang_key = String.to_existing_atom("asdf_#{language}")
+    lang_key = String.to_atom("asdf_#{language}")
     execute(cmd, Keyword.put(opts, lang_key, version))
   end
 
