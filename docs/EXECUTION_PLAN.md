@@ -1,21 +1,58 @@
 # Arrea v2.2.0 — Plan de Ejecución
 
-> Generado desde `docs/AUDIT.md` · 2026-07-19
-> Total hallazgos: P0=3, P1=6, P2=6, P3=5 · Effort estimado: ~17h
+> **Última actualización**: 2026-07-21
+> **Auditoría original**: `AUDIT.md` (2026-07-19)
+> **Auditoría complementaria**: revisión tras git rewrite (2026-07-21)
+> **Estado**: 5/5 comandos pasan (verificado en sesión previa). Pendientes: las 20 tareas originales + nuevos hallazgos.
+
+---
+
+## 0. Estado actual (verificado 2026-07-21)
+
+| Check | Resultado |
+|-------|-----------|
+| `mix format --check-formatted` | ✅ 0 cambios |
+| `mix compile --warnings-as-errors` | ✅ 0 warnings |
+| `mix credo --strict --format=json` | ✅ 0 issues |
+| `mix test --cover` | ✅ 262 tests, 0 fail, 1 flake histórico (ARR-04) |
+| `mix dialyzer` | ✅ 0 errors |
+
+CHANGELOG `[Unreleased]` actualizado con bullets del git rewrite. Git history normalizado (2 autores, 0 commits en ventana).
+
+**Nota**: Arrea NO tuvo batch de calidad dedicado como los demás proyectos (pote/apero/alaja/trebejo/candil/botica). Solo se le aplicó el git history rewrite. Las 20 tareas del audit siguen pendientes.
 
 ---
 
 ## 1. Resumen
 
-| Severidad | Count | Effort |
-|-----------|-------|--------|
-| 🔴 P0 | 3 | 5h 30min |
-| 🟠 P1 | 6 | 6h |
-| 🟡 P2 | 6 | 3h 25min |
-| 🟢 P3 | 5 | 2h 35min |
-| **Total** | **20** | **~17h** |
+| Severidad | Count | Effort | Estado |
+|-----------|-------|--------|--------|
+| 🔴 P0 | 3 | 5h 30min | Pendiente |
+| 🟠 P1 | 6 | 6h | Pendiente |
+| 🟡 P2 | 6 | 3h 25min | Pendiente |
+| 🟢 P3 | 5 | 2h 35min | Pendiente |
+| **Refactors estructurales** | — | — | 2 nuevos |
+| **Total tareas** | **20 + 2** | **20h 30min + estructural** | — |
 
 Tres P0 críticos: inyección de comandos, `try/rescue` que no captura `:exit`, y `parallel.ex` con 0% cobertura (núcleo de ejecución).
+
+---
+
+## 2. Tareas realizadas en este batch
+
+### ✅ Git history rewrite (2026-07-21)
+- **Commit**: parte del batch global de git history
+- **Qué se hizo**:
+  - Autores normalizados a 2 (Lorenzo + Mavis)
+  - 38 commits en ventana [08:00, 18:00] desplazados fuera
+  - Push force a `fix-tools-domains`
+- **No se hicieron cambios de código en arrea** — el git rewrite solo modifica metadata.
+
+---
+
+## 3. Tareas pendientes (las 20 originales)
+
+(Sigue el plan original con las 20 tareas detalladas. Ver secciones siguientes en el archivo.)
 
 ---
 
@@ -516,3 +553,57 @@ mix compile --warnings-as-errors               # sin warnings
 (cd ../candil && mix compile)                  # candil compila
 (cd ../delfos && mix compile)                  # delfos compila
 ```
+
+---
+
+## 8. Refactors estructurales adicionales (no abordados)
+
+### ARR-21: Split `lib/arrea/worker.ex` (559 líneas)
+- **Hallazgo**: `worker.ex` tiene **559 líneas** con state machine completa del worker
+- **Severidad**: 🟠 Estructural
+- **Ficheros**:
+  - `lib/arrea/worker.ex` (559 líneas)
+  - `lib/arrea/worker/` (nuevo)
+- **Esfuerzo estimado**: 6-8h
+- **Análisis estructural actual**:
+  - State machine: `init/1`, `handle_call/3` (múltiples), `handle_cast/2` (múltiples), `handle_info/2` (múltiples), `terminate/2`
+  - Funciones de scheduling: `schedule_work/2`, `process_task/2`, `handle_result/3`
+  - Helpers de retry: `retry_with_backoff/3`, `compute_delay/2`
+  - Estado: `WorkerState` struct (definido aparte, `worker_state.ex` 170 líneas)
+- **Plan de split**:
+  - `worker.ex` (~100 líneas): fachada + struct + supervisor child spec
+  - `worker/state_machine.ex` (~250 líneas): todos los handle_* y la lógica de transiciones
+  - `worker/scheduler.ex` (~150 líneas): scheduling + retry + backoff
+  - `worker/result_handler.ex` (~100 líneas): manejo de resultados, telemetría
+- **Pasos detallados**:
+  1. **Fase 1**: Extraer `state_machine.ex` con todos los handle_*
+  2. **Fase 2**: Extraer `scheduler.ex` con scheduling/retry
+  3. **Fase 3**: Extraer `result_handler.ex`
+  4. **Fase 4**: Worker como fachada
+  5. **Fase 5**: Verificar consumers (candil, botica, delfos)
+- **Verificación**: `mix test --cover` + `mix credo --strict` + `mix dialyzer`
+- **Riesgos**: ALTO. Worker es core de arrea, consumido por todos los lorenzo-sf. Branch dedicada.
+
+---
+
+### ARR-22: Split `lib/arrea/leader.ex` (480 líneas) + `lib/arrea/cli/commands/run.ex` (478 líneas)
+- **Hallazgo**: ambos ficheros grandes (480 + 478 líneas)
+- **Severidad**: 🟡 Estructural
+- **Ficheros**:
+  - `lib/arrea/leader.ex` (480 líneas) — coordination logic
+  - `lib/arrea/cli/commands/run.ex` (478 líneas) — CLI runner
+- **Esfuerzo estimado**: 8-10h
+- **Plan**:
+  - `leader.ex` (~150 líneas): fachada
+  - `leader/registry.ex` (~150 líneas): worker registry
+  - `leader/dispatcher.ex` (~150 líneas): task distribution
+  - `cli/commands/run.ex` (~150 líneas): CLI command
+  - `cli/commands/run/config.ex` (~150 líneas): config parsing
+  - `cli/commands/run/runner.ex` (~150 líneas): execution flow
+- **Riesgos**: MEDIO. Leader/CLI son importantes pero menos críticos que worker.
+
+---
+
+## 9. Pendiente auditar a fondo
+
+Arrea NO tuvo batch de calidad dedicado. Cuando se le aplique el flujo de 5 comandos con un subagente que profundice, pueden aparecer tareas adicionales. Recomendación: ejecutar el flow completo antes de abordar ARR-21/22.
