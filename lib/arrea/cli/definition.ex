@@ -64,28 +64,23 @@ defmodule Arrea.CLI.Definition do
   # ── Helpers ─────────────────────────────────────────────────────────────────
 
   defp build_runtime_opts(opts) do
-    # Collect all asdf_* and mise_* flags from opts
+    # Collect all asdf_* and mise_* flags from opts. The flag atoms are
+    # declared at compile time (via `switch :asdf_<lang>` DSL), so they
+    # are guaranteed to exist when the CLI runs — `to_existing_atom` is
+    # safe here.
     asdf_opts =
       opts
       |> Map.keys()
       |> Enum.filter(&match?({:asdf, _}, &1))
       |> Enum.map(&elem(&1, 1))
-      |> Enum.map(fn key ->
-        value = opts[key]
-        runtime = String.replace_prefix(to_string(key), "asdf_", "")
-        {String.to_existing_atom("asdf_#{runtime}"), value}
-      end)
+      |> Enum.map(fn key -> {key, opts[key]} end)
 
     mise_opts =
       opts
       |> Map.keys()
       |> Enum.filter(&match?({:mise, _}, &1))
       |> Enum.map(&elem(&1, 1))
-      |> Enum.map(fn key ->
-        value = opts[key]
-        runtime = String.replace_prefix(to_string(key), "mise_", "")
-        {String.to_existing_atom("mise_#{runtime}"), value}
-      end)
+      |> Enum.map(fn key -> {key, opts[key]} end)
 
     asdf_opts ++ mise_opts
   end

@@ -485,7 +485,11 @@ defmodule Arrea.Worker do
     end
   end
 
-  @dialyzer {:nowarn_function, {:handle_custom_action, 3}}
+  @spec handle_custom_action(
+          :retry | :stop | :continue | (WorkerState.t() -> :retry | :stop | :continue),
+          WorkerState.t(),
+          non_neg_integer()
+        ) :: {:retry, pos_integer(), WorkerState.t()} | :stop | :continue
   defp handle_custom_action(:retry, error_state, retry_count) do
     {:retry, 1000, %{error_state | retry_count: retry_count}}
   end

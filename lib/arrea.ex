@@ -90,11 +90,10 @@ defmodule Arrea do
       - `:timeout` — Timeout in ms (default `30_000`). Real timeout: cancels execution.
       - `:retry` — Whether to retry on failure
       - `:shell` — Shell to use (highest priority over config and environment)
-      - `:validate` — Run safety validation before executing (default `false`).
-        Set to `true` to reject dangerous commands (`:rm -rf`, `:sudo `, etc.)
-        before they run. Disabled by default to preserve prior behaviour;
-        trusted internal callers (e.g. Apero's info commands) can keep the
-        default and pay no per-call cost.
+      - `:validate` — Run safety validation before executing (default `true`).
+        Pass `:validate, false` to skip validation for trusted internal
+        commands. When validation is enabled, dangerous commands
+        (`:rm -rf`, `:sudo `, etc.) are rejected before they run.
 
   ## Returns
 
@@ -109,8 +108,11 @@ defmodule Arrea do
       iex> Arrea.execute(fn -> :work end)
       {:ok, %Arrea.Result{success: true, data: :work, failures: []}}
 
-      iex> Arrea.execute("rm -rf /tmp", validate: true)
+      iex> Arrea.execute("rm -rf /tmp")
       {:error, %Arrea.Error{code: :validation_failed, message: "{:dangerous_command, \\"rm -rf\\"}"}}
+
+      iex> Arrea.execute("echo hello", validate: false)
+      {:ok, %Arrea.Result{success: true, data: "hello\\n", failures: []}}
   """
   @spec execute(binary() | (-> term()), [execution_option()]) ::
           {:ok, Arrea.Result.t()} | {:error, Arrea.Error.t()}
@@ -158,9 +160,9 @@ defmodule Arrea do
   end
 
   # Runs `Validator.validate_command/1` for binary commands when the caller
-  # passed `:validate, true`. Default `false` to preserve the historical
-  # behaviour of `Arrea.execute/2` (only batch `Arrea.run/2` validated).
-  # Functions and the default path skip validation entirely.
+  # passed `:validate, true`. Default is `true` (the safe option) — pass
+  # `:validate, false` only if you're certain the command is safe.
+  # Functions always skip validation (they're not shell invocations).
   @spec maybe_validate_cmd(binary() | (-> term()), keyword()) ::
           :ok | {:error, Arrea.Error.t()}
   defp maybe_validate_cmd(cmd, opts) when is_binary(cmd) do

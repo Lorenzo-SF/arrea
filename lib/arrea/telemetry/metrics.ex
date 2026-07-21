@@ -250,7 +250,7 @@ defmodule Arrea.Telemetry.Metrics do
   def handle_circuit_breaker_open(_event_name, _measurements, metadata, _config) do
     ensure_initialized()
     increment_counter(:circuit_open)
-    breaker_id = Map.get(metadata, :breaker_id, :unknown)
+    breaker_id = Map.get(metadata, :name, :unknown)
     Logger.warning("[Telemetry] Circuit breaker #{inspect(breaker_id)} opened")
   end
 
@@ -258,7 +258,7 @@ defmodule Arrea.Telemetry.Metrics do
   def handle_circuit_breaker_closed(_event_name, _measurements, metadata, _config) do
     ensure_initialized()
     increment_counter(:circuit_closed)
-    breaker_id = Map.get(metadata, :breaker_id, :unknown)
+    breaker_id = Map.get(metadata, :name, :unknown)
     Logger.info("[Telemetry] Circuit breaker #{inspect(breaker_id)} closed")
   end
 
@@ -266,8 +266,8 @@ defmodule Arrea.Telemetry.Metrics do
   def handle_circuit_breaker_trip(_event_name, _measurements, metadata, _config) do
     ensure_initialized()
     increment_counter(:circuit_trips)
-    breaker_id = Map.get(metadata, :breaker_id, :unknown)
-    failure_count = Map.get(metadata, :failure_count, 0)
+    breaker_id = Map.get(metadata, :name, :unknown)
+    failure_count = Map.get(metadata, :failures, 0)
 
     Logger.warning(
       "[Telemetry] Circuit breaker #{inspect(breaker_id)} tripped (#{failure_count} failures)"

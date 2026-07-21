@@ -117,8 +117,11 @@ defmodule Arrea.Monitor do
 
   @impl true
   def handle_cast({:finished, worker_id, status}, state) do
-    new_workers =
-      Map.update(state.workers, worker_id, %{status: status}, &Map.put(&1, :status, status))
+    # Terminal status: drop the worker from `state.workers` to avoid
+    # unbounded growth. The counters below keep the totals accurate for
+    # observability, and `get_worker/2` will return :not_found which is
+    # correct semantically (the worker is no longer being tracked).
+    new_workers = Map.delete(state.workers, worker_id)
 
     new_finished =
       if status == :finished, do: state.total_finished + 1, else: state.total_finished
