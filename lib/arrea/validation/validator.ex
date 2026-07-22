@@ -12,9 +12,9 @@ defmodule Arrea.Validation.Validator do
   @type validation_error :: atom() | {atom(), term()}
 
   @doc """
-  Valida una cadena de comando shell.
+  Validates a shell command string.
 
-  Executes todas las security checks estandar en secuencia.
+  Executes all standard security checks in sequence.
 
   ## Returns
 
@@ -46,9 +46,9 @@ defmodule Arrea.Validation.Validator do
   end
 
   @doc """
-  Valida una lista de comandos, retornando todos los resultados.
+  Validates a list of commands, returning all results.
 
-  Returns `{:ok, commands}` solo si TODOS los comandos pasan la validation.
+  Returns `{:ok, commands}` only if ALL commands pass validation.
   Returns `{:error, errors}` con una lista de tuplas `{indice, razon}` para los fallos.
   """
   @spec validate_commands([String.t()]) ::

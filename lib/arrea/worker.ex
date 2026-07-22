@@ -2,13 +2,13 @@ defmodule Arrea.Worker do
   @moduledoc """
   Worker GenServer for task execution.
 
-  ## Ciclo de vida
+  ## Lifecycle
 
-  1. `init/1` — Inicializa estado y se registra en `Arrea.Monitor`.
-  2. `handle_info(:execute_task, state)` — Executes la primera tarea de la cola.
-  3. `handle_cast({:message, msg}, state)` — Procesa mensajes recibidos de otros workers.
-  4. `terminate/2` — Notifica al Monitor si el worker terminó de forma inesperada.
-     Si terminó por su propio flujo normal (todas las tareas completadas o error
+  1. `init/1` — Initializes state and registers in `Arrea.Monitor`.
+  2. `handle_info(:execute_task, state)` — Executes the first task in the queue.
+  3. `handle_cast({:message, msg}, state)` — Processes messages received from other workers.
+  4. `terminate/2` — Notifies the Monitor if the worker ended unexpectedly.
+     If it ended through its own normal flow (all tasks completed or error
      handled), the notification was already emitted before `{:stop, ...}` and
      `terminate` does not duplicate it.
 

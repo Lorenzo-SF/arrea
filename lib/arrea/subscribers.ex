@@ -1,5 +1,11 @@
 defmodule Arrea.Subscribers do
-  @moduledoc false
+  @moduledoc """
+  Process subscription set with automatic cleanup on DOWN.
+
+  Maintains a `MapSet` of subscriber PIDs and broadcasts messages to all alive
+  members. Dead PIDs are removed automatically via `Process.monitor/1` (in
+  `subscribe/2`) and via liveness checks (in `broadcast/2`).
+  """
 
   @doc """
   Subscribe a PID to the subscriber set, monitoring it for cleanup.
