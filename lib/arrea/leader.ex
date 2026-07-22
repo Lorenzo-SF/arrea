@@ -13,9 +13,8 @@ defmodule Arrea.Leader do
 
   use GenServer
 
-  alias Arrea.Command
+  alias Arrea.Leader.CommandRunner
   alias Arrea.Subscribers
-  alias Arrea.Validation.Rules
 
   require Logger
 
@@ -32,13 +31,6 @@ defmodule Arrea.Leader do
           max_workers: non_neg_integer(),
           stats: map()
         }
-
-  @max_command_length 65_536
-
-  # Per-shell-command timeout (ms). System.cmd blocks until the shell
-  # exits, so a runaway command (sleep, cat /dev/zero, network call)
-  # would otherwise hang the worker forever.
-  @default_shell_timeout 30_000
 
   # Bound the synchronous GenServer.call timeout for execute/2 so a
   # stuck Leader cannot block a caller forever.
@@ -172,91 +164,23 @@ defmodule Arrea.Leader do
     max_allowed = Keyword.get(opts, :max_workers, state.max_workers)
     workers = Keyword.get(opts, :workers, 4)
 
-    case validate_commands(commands, max_allowed, workers) do
+    case CommandRunner.validate_commands(
+           commands,
+           max_allowed,
+           workers,
+           generate_batch_id(),
+           now()
+         ) do
       {:error, _} = error ->
         {:reply, error, state}
 
       {:ok, validation} ->
         {successes, failures, workers_acc, new_batches} =
-          start_workers(commands, opts, validation, state)
+          CommandRunner.start_workers(commands, opts, validation, state)
 
-        reply = build_execute_reply(successes, failures, validation.batch_id)
+        reply = CommandRunner.build_execute_reply(successes, failures, validation.batch_id)
         new_state = %{state | batches: new_batches, workers: workers_acc}
         {:reply, reply, new_state}
-    end
-  end
-
-  defp validate_commands(commands, max_allowed, workers) do
-    cmd_count = length(commands)
-
-    cond do
-      cmd_count == 0 ->
-        {:error, :empty_command_list}
-
-      cmd_count > max_allowed ->
-        {:error, {:too_many_commands, cmd_count, max_allowed}}
-
-      true ->
-        {:ok,
-         %{
-           batch_id: generate_batch_id(),
-           cmd_count: cmd_count,
-           workers: workers,
-           started_at: now()
-         }}
-    end
-  end
-
-  defp start_workers(commands, opts, validation, state) do
-    context = %{
-      batch_id: validation.batch_id,
-      parent: self(),
-      policy: Keyword.get(opts, :policy, %{}),
-      log: Keyword.get(opts, :log, false),
-      max_workers: state.max_workers,
-      active_count: map_size(state.workers)
-    }
-
-    {successes, failures, workers_acc} =
-      commands
-      |> Enum.with_index()
-      |> Enum.reduce({0, 0, %{}}, fn {cmd, idx}, {ok_count, fail_count, workers} ->
-        current_active = map_size(workers) + context.active_count
-
-        if current_active >= context.max_workers do
-          Logger.warning(
-            "[Leader] Global worker limit reached (#{context.max_workers}), skipping command #{idx}"
-          )
-
-          {ok_count, fail_count + 1, workers}
-        else
-          start_and_track_worker(cmd, idx, context, ok_count, fail_count, workers)
-        end
-      end)
-
-    new_batches =
-      Map.put(state.batches, validation.batch_id, %{
-        commands: commands,
-        workers: validation.workers,
-        started_at: validation.started_at,
-        total: validation.cmd_count,
-        started: successes,
-        failed_to_start: failures
-      })
-
-    {successes, failures, workers_acc, new_batches}
-  end
-
-  defp build_execute_reply(successes, failures, batch_id) do
-    cond do
-      successes == 0 ->
-        {:error, {:all_workers_failed, failures}}
-
-      failures > 0 ->
-        {:ok, batch_id, %{started: successes, failed: failures}}
-
-      true ->
-        {:ok, batch_id}
     end
   end
 
@@ -266,16 +190,22 @@ defmodule Arrea.Leader do
     workers = Keyword.get(opts, :workers, 4)
 
     new_state =
-      case validate_commands(commands, max_allowed, workers) do
+      case CommandRunner.validate_commands(
+             commands,
+             max_allowed,
+             workers,
+             generate_batch_id(),
+             now()
+           ) do
         {:error, reason} ->
           send(parent, {:arrea_execute_result, nil, {:error, reason}})
           state
 
         {:ok, validation} ->
           {successes, failures, workers_acc, new_batches} =
-            start_workers(commands, opts, validation, state)
+            CommandRunner.start_workers(commands, opts, validation, state)
 
-          reply = build_execute_reply(successes, failures, validation.batch_id)
+          reply = CommandRunner.build_execute_reply(successes, failures, validation.batch_id)
           send(parent, {:arrea_execute_result, validation.batch_id, reply})
 
           %{state | batches: new_batches, workers: workers_acc}
@@ -350,107 +280,6 @@ defmodule Arrea.Leader do
     {:noreply, state}
   end
 
-  @spec build_task_function(String.t() | function()) :: function()
-  defp build_task_function(cmd) when is_binary(cmd) do
-    case validate_command(cmd) do
-      :ok -> fn -> execute_shell_cmd(cmd, @default_shell_timeout) end
-      {:error, reason} -> fn -> {:error, reason} end
-    end
-  end
-
-  defp build_task_function(fun) when is_function(fun, 0), do: fun
-
-  defp build_task_function(cmd), do: fn -> {:error, {:invalid_command, cmd}} end
-
-  @spec execute_shell_cmd(String.t(), pos_integer()) :: map()
-  defp execute_shell_cmd(cmd, timeout) do
-    shell = Command.resolve_shell()
-
-    task =
-      Task.async(fn ->
-        System.cmd(shell, ["-c", cmd], stderr_to_stdout: true)
-      end)
-
-    case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
-      {:ok, {output, exit_code}} ->
-        %{stdout: output, exit_code: exit_code}
-
-      nil ->
-        %{stdout: "", stderr: "shell command timed out", exit_code: -1, timeout: true}
-
-      {:exit, reason} ->
-        %{stdout: "", stderr: "shell crashed: #{inspect(reason)}", exit_code: -1}
-    end
-  end
-
-  @spec validate_command(String.t()) :: :ok | {:error, term()}
-  defp validate_command(cmd) do
-    with {:ok, _} <- Rules.not_empty(cmd),
-         {:ok, _} <- Rules.max_length(cmd, @max_command_length),
-         {:ok, _} <- Rules.no_injection(cmd),
-         {:ok, _} <- Rules.safe_command(cmd) do
-      :ok
-    else
-      {:error, reason} -> {:error, {:validation_failed, reason}}
-    end
-  end
-
-  @spec build_child_spec(term(), function(), pid(), boolean(), map()) :: map()
-  defp build_child_spec(worker_id, task_fn, parent, log, policy) do
-    %{
-      id: worker_id,
-      start:
-        {Arrea.Worker, :start_link,
-         [
-           [
-             id: worker_id,
-             tasks: [task_fn],
-             parent: parent,
-             log: log,
-             policy: policy
-           ]
-         ]},
-      restart: :temporary,
-      type: :worker
-    }
-  end
-
-  @spec start_worker_child(map(), String.t(), term()) ::
-          {non_neg_integer(), non_neg_integer(), pid() | nil}
-  defp start_worker_child(child_spec, batch_id, worker_id) do
-    case DynamicSupervisor.start_child(Arrea.WorkerSupervisor, child_spec) do
-      {:ok, pid} ->
-        Process.monitor(pid)
-
-        notify_event(%{
-          type: :worker_started,
-          batch: batch_id,
-          worker: worker_id,
-          pid: pid
-        })
-
-        {1, 0, pid}
-
-      {:error, reason} ->
-        log_msg =
-          case reason do
-            :max_children -> "max children reached for #{inspect(worker_id)}"
-            _ -> "failed to start worker #{inspect(worker_id)}: #{inspect(reason)}"
-          end
-
-        Logger.warning("[Leader] #{log_msg}")
-
-        notify_event(%{
-          type: :worker_error,
-          batch: batch_id,
-          worker: worker_id,
-          reason: reason
-        })
-
-        {0, 1, nil}
-    end
-  end
-
   @spec update_stat(map(), atom(), integer()) :: map()
   defp update_stat(stats, key, delta) do
     Map.update(stats, key, delta, &(&1 + delta))
@@ -467,14 +296,5 @@ defmodule Arrea.Leader do
   @impl true
   def code_change(_old_vsn, state, _extra) do
     {:ok, state}
-  end
-
-  defp start_and_track_worker(cmd, idx, context, ok_count, fail_count, workers) do
-    %{batch_id: batch_id, parent: parent, log: log, policy: policy} = context
-    task_fn = build_task_function(cmd)
-    child_spec = build_child_spec({batch_id, idx}, task_fn, parent, log, policy)
-    {delta_ok, delta_fail, pid} = start_worker_child(child_spec, batch_id, {batch_id, idx})
-    workers = if pid, do: Map.put(workers, pid, {batch_id, idx}), else: workers
-    {ok_count + delta_ok, fail_count + delta_fail, workers}
   end
 end
