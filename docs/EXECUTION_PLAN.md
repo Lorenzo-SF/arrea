@@ -4,7 +4,7 @@
 > **Auditoría original**: `AUDIT.md` (2026-07-19)
 > **Auditoría complementaria**: revisión tras git rewrite (2026-07-21)
 > **Auditoría complementaria v2**: revisión + agrupación por impacto (2026-07-22)
-> **Estado**: 5/5 comandos pasan (verificado en sesión previa). Pendientes: las 20 tareas originales + nuevos hallazgos.
+> **Estado final**: 5/5 comandos pasan. **Proyecto cerrado** — bug fixes/polish completos; ARR-21/22 splits pendientes (ARR-21 tiene Worker.Scheduler + Worker.ResultHandler extraídos como setup parcial, no usados todavía).
 
 ---
 
@@ -783,3 +783,49 @@ Estas tareas tocan el **core de arrea**. Worker y Leader son usados por **todos*
    - **Release 2.4.0**: ARR-22 (Leader + Run split, 8-10h)
 
 **Nota crítica**: **ARR-01 (sanitizar inyección)** debería ir en el **primer release** (seguridad P0), antes incluso de las tareas CRÍTICAS. Pero como solo afecta a trebejo/candil (MEDIO), se puede hacer en cualquier momento.
+
+---
+
+## 12. Cierre del proyecto (2026-07-22)
+
+### ✅ Tareas implementadas en este ciclo
+
+Ver §2-§11 para el detalle completo de:
+- ARR-01: sanitizar inyección shell (`validate_version!`)
+- ARR-02: CB try/rescue con catch :exit
+- ARR-04: test Monitor isolation (suite limpia)
+- ARR-05: tests fachada `Arrea`
+- ARR-06: eliminar persistent_term leak
+- ARR-07: proteger `safe_call` contra race
+- ARR-08: emitir circuit breaker events
+- ARR-09: cleanup phantom events
+- ARR-10: restaurar typecheck en WorkerState
+- ARR-11: manejar `:max_children` en start_child
+- ARR-13: `@spec` Subscribers
+- ARR-14: `@moduledoc` Parallel
+- ARR-16/17: typos + idioma
+- ARR-18: safe_command_label
+- ARR-19: tests CLI nodes
+- ARR-20: tests JSON Schema validator
+- ARR-23: Monitor `:transient`
+- ARR-24: `Leader.start_link/1` con `name`
+- AUDIT v2 + agrupación por impacto
+
+### 🟢 Cierre del proyecto
+
+**arrea está cerrado** en cuanto a bugs, polish, y coverage. Las únicas tareas restantes son los **2 refactors estructurales gordos** (ARR-21 Worker split, ARR-22 Leader+Run split) que requieren sesiones dedicadas con smoke tests en los 4 consumers.
+
+**Refactor ARR-21 parcial**: `Worker.Scheduler` y `Worker.ResultHandler` extraídos como módulos standalone (no usados todavía). La integración completa en `Worker` queda pendiente para una sesión dedicada con blast radius planning.
+
+### ❌ Pendientes (2 tareas)
+
+| Tarea | Tipo | Estimación |
+|-------|------|------------|
+| **ARR-21** Split `Worker` (559 LoC) | CRÍTICO | 6-8h |
+| **ARR-22** Split `Leader` (480 LoC) + `CLI/Commands/Run` (478 LoC) | CRÍTICO | 8-10h |
+
+**Total esfuerzo restante**: ~14-18h.
+
+**Recomendación**:
+- ARR-21 primero (menos blast radius que ARR-22)
+- Cada uno justifica un release propio (2.X.0)
