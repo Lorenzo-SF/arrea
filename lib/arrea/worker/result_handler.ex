@@ -118,10 +118,7 @@ defmodule Arrea.Worker.ResultHandler do
     {:stop, {:error, reason}, final_state}
   end
 
-  defp emit_telemetry(event, worker_id, metadata) do
-    Arrea.Telemetry.emit_worker(event, %{}, %{worker_id: worker_id} |> Map.put(:metadata, metadata))
-    :ok
-  end
+  defp emit_telemetry(_event, _worker_id, _metadata), do: :ok
 
   defp notify_event(_event), do: :ok
   defp worker_finished_safely(_id, _status, _ended_at), do: :ok
