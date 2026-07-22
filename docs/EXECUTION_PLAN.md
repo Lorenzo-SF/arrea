@@ -1,8 +1,9 @@
 # Arrea v2.2.0 — Plan de Ejecución
 
-> **Última actualización**: 2026-07-21
+> **Última actualización**: 2026-07-22
 > **Auditoría original**: `AUDIT.md` (2026-07-19)
 > **Auditoría complementaria**: revisión tras git rewrite (2026-07-21)
+> **Auditoría complementaria v2**: revisión + agrupación por impacto (2026-07-22)
 > **Estado**: 5/5 comandos pasan (verificado en sesión previa). Pendientes: las 20 tareas originales + nuevos hallazgos.
 
 ---
@@ -35,6 +36,16 @@ CHANGELOG `[Unreleased]` actualizado con bullets del git rewrite. Git history no
 | **Total tareas** | **20 + 2** | **20h 30min + estructural** | — |
 
 Tres P0 críticos: inyección de comandos, `try/rescue` que no captura `:exit`, y `parallel.ex` con 0% cobertura (núcleo de ejecución).
+
+### Vista por impacto (ver §11 para detalle)
+
+| Impacto | # tareas | Descripción |
+|---------|----------|-------------|
+| 🟢 LOCAL | 16 | Solo afecta a arrea internamente |
+| 🟡 MEDIO | 4 | Afecta a 1-2 consumers (trebejo, candil, botica, delfos) |
+| 🔴 CRÍTICO | 2 | Afecta a ≥3 consumers — refactors estructurales (ARR-21, ARR-22) |
+
+**Conclusión**: arrea es el **orchestration layer** del ecosistema. Los refactors estructurales (ARR-21 split worker, ARR-22 split leader+run) son los únicos con blast radius ≥3 porque worker/leader son usados por **todos** los consumidores (trebejo, candil, botica, delfos). El resto son cambios internos sin tocar API pública.
 
 ---
 
@@ -604,6 +615,171 @@ mix compile --warnings-as-errors               # sin warnings
 
 ---
 
-## 9. Pendiente auditar a fondo
+## 9. AUDIT v2 — Hallazgos adicionales no abordados (2026-07-22)
+
+> Tareas del `AUDIT.md` original que **no tienen contraparte** en las fases 1-4 (ARR-01..ARR-20).
+
+### ARR-23: Cambiar `:permanent` a `:transient` en Monitor
+- **Hallazgo** (`AUDIT.md` §6 línea 285):
+  > `monitor.ex:36` — `:permanent` restart significa que si Monitor crashea repetidamente, el supervisor reintentará indefinidamente.
+- **Severidad**: 🟢 P3
+- **Ficheros**: `lib/arrea/supervisor.ex` (donde se inicia Monitor)
+- **Esfuerzo**: 5 min
+- **Pasos**:
+  1. Cambiar `child_spec` de Monitor de `:permanent` a `:transient`
+  2. Verificar que Monitor se reinicia en crash normal pero no en crash intencional
+- **Verificación**: `mix test` + `mix credo --all`
+- **Impacto**: 🟢 LOCAL (interno, no afecta consumers)
+
+### ARR-24: Permitir `name` parameter en `Leader.start_link/1`
+- **Hallazgo** (`AUDIT.md` §6 línea 286):
+  > `leader.ex:56` — `start_link/1` registra con `name: __MODULE__` — solo una instancia global.
+- **Severidad**: 🟢 P3
+- **Ficheros**: `lib/arrea/leader.ex`
+- **Esfuerzo**: 15 min
+- **Pasos**:
+  1. Cambiar `start_link/1` para aceptar `name:` option
+  2. Default a `__MODULE__` para mantener compatibilidad
+  3. Test con `name: :test_leader` que coexista con el de la app
+- **Verificación**: `mix test` + `mix credo --all`
+- **Impacto**: 🟢 LOCAL (mejora testabilidad)
+
+### ARR-25: Reemplazar `:timer.sleep` por `assert_receive` en Monitor test
+- **Hallazgo** (`AUDIT.md` §4 línea 215):
+  > `test/arrea/monitor_test.exs:33` — `test/arrea/monitor_test.exs:33` — `:timer.sleep(20)` para sincronización. Tests que dependen de `:timer.sleep` son frágiles y lentos.
+- **Severidad**: 🟡 P2
+- **Ficheros**: `test/arrea/monitor_test.exs`
+- **Esfuerzo**: 30 min
+- **Pasos**:
+  1. Identificar todos los `:timer.sleep` en el test
+  2. Reemplazar por `assert_receive {:register_worker, ...}, 1000`
+  3. Si no hay mensaje esperado, usar `Process.monitor(pid)` + `assert_receive {:DOWN, ...}`
+- **Verificación**: `mix test test/arrea/monitor_test.exs` (0 failures, más rápido)
+- **Impacto**: 🟢 LOCAL (test más robusto)
+- **Dependencias**: ARR-04 (suite limpia primero)
+
+### ARR-26: Limitar tamaño de `data` binaria en telemetría LongRunning
+- **Hallazgo** (`AUDIT.md` §8 línea 361):
+  > `long_running.ex:235` — Emite `data` binaria cruda en metadata. Para datos grandes (>1KB) esto puede saturar el buffer de telemetría.
+- **Severidad**: 🟡 P2 (no estaba como tarea separada)
+- **Ficheros**: `lib/arrea/long_running.ex`
+- **Esfuerzo**: 30 min
+- **Pasos**:
+  1. En `long_running.ex:235` (función que emite `[:arrea, :long_running, :data]`), añadir cap:
+     ```elixir
+     truncated_data = if byte_size(data) > 1024, do: binary_part(data, 0, 1024) <> "...(truncated)", else: data
+     ```
+  2. O usar `Application.get_env(:arrea, :long_running_data_cap, 1024)` para hacer configurable
+  3. Test que verifique truncamiento con data > 1024 bytes
+- **Verificación**: `mix test` + `mix credo --all`
+- **Impacto**: 🟢 LOCAL (protege el buffer de telemetría)
+
+---
+
+## 10. Pendiente auditar a fondo
 
 Arrea NO tuvo batch de calidad dedicado. Cuando se le aplique el flujo de 5 comandos con un subagente que profundice, pueden aparecer tareas adicionales. Recomendación: ejecutar el flow completo antes de abordar ARR-21/22.
+
+---
+
+## 11. Agrupación por impacto en el ecosistema (2026-07-22)
+
+> **Pregunta**: si hago esta tarea, ¿tengo que tocar otros proyectos o se hace y ya?
+
+Cada tarea se clasifica según su **radio de explosión**:
+
+- 🟢 **LOCAL**: solo afecta a arrea internamente. Se hace, se commitea, no se toca nada más.
+- 🟡 **MEDIO**: afecta a 1-2 consumidores. Se hace en arrea + smoke test en esos 1-2 proyectos.
+- 🔴 **CRÍTICO**: afecta a ≥3 consumidores o a la API pública del ecosistema. Requiere branch dedicada, smoke tests en TODOS los consumidores, y rollback plan.
+
+### 🟢 LOCAL — "se hace y ya" (16 tareas)
+
+| ID | Tarea |
+|----|-------|
+| ARR-03 | Tests para `Arrea.Parallel` (0% cobertura) |
+| ARR-04 | Fix test de Monitor (failure por aislamiento) |
+| ARR-05 | Tests para fachada `Arrea` (0% cobertura) |
+| ARR-06 | Eliminar leak de `:persistent_term` en LongRunning |
+| ARR-09 | Limpiar 13 eventos telemetry fantasma |
+| ARR-10 | Restaurar typecheck en `WorkerState.new/3` |
+| ARR-11 | Manejar error de `DynamicSupervisor.start_child` |
+| ARR-12 | Refactorizar `sudo_whitelisted?` |
+| ARR-13 | Añadir `@spec` a Subscribers |
+| ARR-14 | Añadir documentación pública a Parallel |
+| ARR-15 | Corregir `String.to_existing_atom/1` en `execute_with_asdf` |
+| ARR-16 | Corregir typos en `validator.ex` |
+| ARR-17 | Unificar idioma en `worker.ex` |
+| ARR-18 | Mejorar `safe_command_label` |
+| ARR-19 | Tests para CLI nodes |
+| ARR-20 | Tests para JSON Schema validator |
+| ARR-23 | Cambiar `:permanent` a `:transient` en Monitor |
+| ARR-24 | Permitir `name` parameter en `Leader.start_link/1` |
+| ARR-25 | Reemplazar `:timer.sleep` por `assert_receive` |
+| ARR-26 | Limitar tamaño de `data` binaria en LongRunning |
+
+**Workflow**: branch en `arrea` → tests → commit → push.
+
+---
+
+### 🟡 MEDIO — "verificar 1-2 consumidores" (4 tareas)
+
+| ID | Tarea | Consumidores | Smoke test requerido |
+|----|-------|--------------|----------------------|
+| ARR-01 | Sanitizar versiones en `build_asdf_prefix` (security P0) | trebejo, candil (vía `Arrea.Command.execute`) | `cd ../trebejo && mix test` + `cd ../candil && mix test` |
+| ARR-02 | Catch para `:exit` en `CircuitBreaker.call/3` | candil, delfos (vía CB) | `cd ../candil && mix test` + `cd ../delfos && mix test` |
+| ARR-07 | Proteger `safe_call` en CircuitBreaker contra race | candil, delfos | idem ARR-02 |
+| ARR-08 | Emitir circuit breaker events | candil, delfos (handlers en Metrics) | idem ARR-02 |
+
+**Workflow**: branch en `arrea` → tests propios → smoke test en consumidores → si pasa, merge.
+
+---
+
+### 🔴 CRÍTICO — "branch dedicada + smoke tests en TODOS" (2 tareas)
+
+Estas tareas tocan el **core de arrea**. Worker y Leader son usados por **todos** los consumidores del ecosistema. Si se hace mal, rompe orquestación entera.
+
+| ID | Tarea | Consumidores | Blast radius |
+|----|-------|--------------|--------------|
+| **ARR-21** | Split `Worker` (559 LoC) | trebejo, candil, botica, delfos | Workers son el core de arrea |
+| **ARR-22** | Split `Leader` (480 LoC) + `CLI/Commands/Run` (478 LoC) | trebejo, candil, botica, delfos | Leader coordina todos los batches |
+
+**Workflow** (para cada una):
+1. **Branch dedicada** en `arrea`: `refactor/arr-XX-<name>`
+2. **Implementar** con tests exhaustivos
+3. **Verificar 5/5** comandos en arrea
+4. **Smoke tests OBLIGATORIOS** en los 4 consumidores:
+   ```bash
+   cd ~/cacafuti/trebejo && mix deps.get && mix compile --warnings-as-errors && mix test
+   cd ~/cacafuti/candil && mix deps.get && mix compile --warnings-as-errors && mix test
+   cd ~/cacafuti/botica && mix deps.get && mix compile --warnings-as-errors && mix test
+   cd ~/cacafuti/delfos && mix deps.get && mix compile --warnings-as-errors && mix test
+   ```
+5. **Rollback plan**: revert + bump patch si se descubre regresión
+
+**Especial ARR-21** (Worker split): si cambia el contrato de los mensajes internos, podría romper Candil y Delfos que hacen `Process.send` a workers. Plan: mantener nombres de mensajes 100% backwards-compatible.
+
+**Especial ARR-22** (Leader split): menos arriesgado que ARR-21 porque Leader es interno a arrea. Pero `cli/commands/run.ex` es API pública CLI → verificar que el comando sigue funcionando idéntico.
+
+---
+
+### 📊 Matriz resumen
+
+| Impacto | # tareas | Esfuerzo | Branch dedicada | Smoke tests externos |
+|---------|----------|----------|-----------------|----------------------|
+| 🟢 LOCAL | 16 | ~13h | No | 0 proyectos |
+| 🟡 MEDIO | 4 | ~3h | No (en arrea) | 2-4 proyectos |
+| 🔴 CRÍTICO | 2 | ~16h | **Sí** | **4 proyectos** |
+| **Total** | **22** | **~32h** | — | — |
+
+### 🎯 Orden de ejecución sugerido
+
+1. **Quick wins LOCAL** (1h): ARR-04, ARR-13, ARR-14, ARR-16, ARR-17, ARR-23, ARR-24
+2. **Bug fixes LOCAL** (3-4h): ARR-06 (persistent_term), ARR-10 (typecheck), ARR-11 (max_children), ARR-15 (to_existing_atom), ARR-25 (timer.sleep), ARR-26 (data cap)
+3. **Coverage LOCAL** (6h): ARR-03 (parallel), ARR-05 (fachada), ARR-19 (nodes), ARR-20 (json_schema)
+4. **Polish LOCAL** (1.5h): ARR-09, ARR-12, ARR-18
+5. **MEDIO con smoke tests** (3h): ARR-01 (security!), ARR-02, ARR-07, ARR-08
+6. **CRÍTICO — uno por release**:
+   - **Release 2.3.0**: ARR-21 (Worker split, 6-8h, core de orquestación)
+   - **Release 2.4.0**: ARR-22 (Leader + Run split, 8-10h)
+
+**Nota crítica**: **ARR-01 (sanitizar inyección)** debería ir en el **primer release** (seguridad P0), antes incluso de las tareas CRÍTICAS. Pero como solo afecta a trebejo/candil (MEDIO), se puede hacer en cualquier momento.
