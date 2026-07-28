@@ -5,13 +5,14 @@ defmodule Arrea.MonitorTest do
   setup do
     case Process.whereis(Monitor) do
       nil ->
-        :ok
+        start_supervised!({Monitor, []})
 
       pid ->
-        GenServer.stop(pid)
+        :sys.replace_state(pid, fn _ ->
+          %{workers: %{}, total_started: 0, total_finished: 0, total_errors: 0}
+        end)
     end
 
-    {:ok, _pid} = GenServer.start_link(Monitor, [], name: Monitor)
     :ok
   end
 

@@ -116,4 +116,6 @@ defmodule Arrea.Telemetry do
   defdelegate emit_communication(type, measurements, metadata), to: Events
   defdelegate emit_validation(type, measurements, metadata), to: Events
   defdelegate emit_ui(type, measurements, metadata), to: Events
+  defdelegate emit_engine(sub_category, type, measurements, metadata), to: Events
+  defdelegate emit_long_running(type, measurements, metadata), to: Events
 end

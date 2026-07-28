@@ -26,6 +26,7 @@ defmodule Arrea.Telemetry.Metrics do
 
   @doc """
   Sets up all Telemetry metrics for Arrea.
+  Idempotent — repeated calls are silently skipped.
   """
   @spec setup() :: :ok
   def setup do
@@ -52,71 +53,46 @@ defmodule Arrea.Telemetry.Metrics do
     :ets.insert(@table, {:circuit_closed, 0})
     :ets.insert(@table, {:circuit_trips, 0})
 
-    :telemetry.attach(
-      {__MODULE__, :worker_started},
-      [:arrea, :worker, :started],
-      &__MODULE__.handle_worker_started/4,
-      nil
-    )
+    attach_safe(:worker_started, [:arrea, :worker, :started], &__MODULE__.handle_worker_started/4)
 
-    :telemetry.attach(
-      {__MODULE__, :worker_completed},
+    attach_safe(
+      :worker_completed,
       [:arrea, :worker, :completed],
-      &__MODULE__.handle_worker_completed/4,
-      nil
+      &__MODULE__.handle_worker_completed/4
     )
 
-    :telemetry.attach(
-      {__MODULE__, :worker_error},
-      [:arrea, :worker, :error],
-      &__MODULE__.handle_worker_error/4,
-      nil
-    )
+    attach_safe(:worker_error, [:arrea, :worker, :error], &__MODULE__.handle_worker_error/4)
+    attach_safe(:task_started, [:arrea, :task, :started], &__MODULE__.handle_task_started/4)
+    attach_safe(:task_completed, [:arrea, :task, :completed], &__MODULE__.handle_task_completed/4)
+    attach_safe(:task_error, [:arrea, :task, :error], &__MODULE__.handle_task_error/4)
 
-    :telemetry.attach(
-      {__MODULE__, :task_started},
-      [:arrea, :task, :started],
-      &__MODULE__.handle_task_started/4,
-      nil
-    )
-
-    :telemetry.attach(
-      {__MODULE__, :task_completed},
-      [:arrea, :task, :completed],
-      &__MODULE__.handle_task_completed/4,
-      nil
-    )
-
-    :telemetry.attach(
-      {__MODULE__, :task_error},
-      [:arrea, :task, :error],
-      &__MODULE__.handle_task_error/4,
-      nil
-    )
-
-    :telemetry.attach(
-      {__MODULE__, :circuit_breaker_open},
+    attach_safe(
+      :circuit_open,
       [:arrea, :circuit_breaker, :open],
-      &__MODULE__.handle_circuit_breaker_open/4,
-      nil
+      &__MODULE__.handle_circuit_breaker_open/4
     )
 
-    :telemetry.attach(
-      {__MODULE__, :circuit_breaker_closed},
+    attach_safe(
+      :circuit_closed,
       [:arrea, :circuit_breaker, :closed],
-      &__MODULE__.handle_circuit_breaker_closed/4,
-      nil
+      &__MODULE__.handle_circuit_breaker_closed/4
     )
 
-    :telemetry.attach(
-      {__MODULE__, :circuit_breaker_trip},
+    attach_safe(
+      :circuit_trip,
       [:arrea, :circuit_breaker, :trip],
-      &__MODULE__.handle_circuit_breaker_trip/4,
-      nil
+      &__MODULE__.handle_circuit_breaker_trip/4
     )
 
-    Logger.info("[Arrea.Telemetry] Metrics configured successfully")
+    Logger.debug("[Arrea.Telemetry] Metrics configured successfully")
     :ok
+  end
+
+  # Idempotent attach: already-attached handlers are silently skipped.
+  defp attach_safe(id, event, handler) do
+    :telemetry.attach({__MODULE__, id}, event, handler, nil)
+  rescue
+    ArgumentError -> :ok
   end
 
   @doc """
@@ -274,7 +250,7 @@ defmodule Arrea.Telemetry.Metrics do
   def handle_circuit_breaker_open(_event_name, _measurements, metadata, _config) do
     ensure_initialized()
     increment_counter(:circuit_open)
-    breaker_id = Map.get(metadata, :breaker_id, :unknown)
+    breaker_id = Map.get(metadata, :name, :unknown)
     Logger.warning("[Telemetry] Circuit breaker #{inspect(breaker_id)} opened")
   end
 
@@ -282,7 +258,7 @@ defmodule Arrea.Telemetry.Metrics do
   def handle_circuit_breaker_closed(_event_name, _measurements, metadata, _config) do
     ensure_initialized()
     increment_counter(:circuit_closed)
-    breaker_id = Map.get(metadata, :breaker_id, :unknown)
+    breaker_id = Map.get(metadata, :name, :unknown)
     Logger.info("[Telemetry] Circuit breaker #{inspect(breaker_id)} closed")
   end
 
@@ -290,8 +266,8 @@ defmodule Arrea.Telemetry.Metrics do
   def handle_circuit_breaker_trip(_event_name, _measurements, metadata, _config) do
     ensure_initialized()
     increment_counter(:circuit_trips)
-    breaker_id = Map.get(metadata, :breaker_id, :unknown)
-    failure_count = Map.get(metadata, :failure_count, 0)
+    breaker_id = Map.get(metadata, :name, :unknown)
+    failure_count = Map.get(metadata, :failures, 0)
 
     Logger.warning(
       "[Telemetry] Circuit breaker #{inspect(breaker_id)} tripped (#{failure_count} failures)"

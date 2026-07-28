@@ -40,6 +40,8 @@ defmodule Arrea.CircuitBreaker do
   use GenServer
   alias Arrea.CircuitBreaker.State
 
+  require Logger
+
   @type state :: :closed | :open | :half_open
 
   @doc """
@@ -84,14 +86,13 @@ defmodule Arrea.CircuitBreaker do
           GenServer.cast(via_tuple(name), :success)
           {:ok, result}
         rescue
-          # Catching all exceptions here is intentional: the breaker
-          # contract is "any user-raised error counts as a failure".
-          # If we narrowed this to specific exceptions, an unexpected
-          # FunctionClauseError / KeyError / etc. would escape the
-          # breaker and bypass failure accounting.
           _exception ->
             GenServer.cast(via_tuple(name), :failure)
             {:error, :execution_failed}
+        catch
+          kind, reason ->
+            GenServer.cast(via_tuple(name), :failure)
+            :erlang.raise(kind, reason, __STACKTRACE__)
         end
 
       {:blocked, reason} ->
@@ -133,8 +134,15 @@ defmodule Arrea.CircuitBreaker do
   def init(opts) do
     {:ok,
      %State{
-       threshold: Keyword.get(opts, :threshold, 5),
-       timeout: Keyword.get(opts, :timeout, 60_000)
+       name: Keyword.get(opts, :name) || Keyword.fetch!(opts, :id),
+       threshold:
+         Keyword.get(opts, :threshold, Application.get_env(:arrea, :circuit_breaker_threshold, 5)),
+       timeout:
+         Keyword.get(
+           opts,
+           :timeout,
+           Application.get_env(:arrea, :circuit_breaker_timeout, 60_000)
+         )
      }}
   end
 
@@ -144,9 +152,9 @@ defmodule Arrea.CircuitBreaker do
   @impl true
   def handle_call(:get_full_state, _from, state), do: {:reply, state, state}
 
-  # Toma la decisión de permitir o bloquear de forma atómica.
-  # Si el circuito está abierto y el timeout expiró, transiciona a half_open
-  # y permite un intento de ejecución.
+  # Atomically decide to allow or block execution.
+  # When the circuit is open and the timeout has expired, transition to
+  # half_open and allow one trial execution.
   @impl true
   def handle_call(:get_state_and_check, _from, state) do
     case state.state do
@@ -156,6 +164,7 @@ defmodule Arrea.CircuitBreaker do
       :open ->
         if should_retry_from_state?(state) do
           new_state = %{state | state: :half_open}
+          emit(:half_open, new_state)
           {:reply, {:allowed, new_state}, new_state}
         else
           {:reply, {:blocked, :circuit_open}, state}
@@ -177,7 +186,9 @@ defmodule Arrea.CircuitBreaker do
           required = max(1, div(state.threshold, 2))
 
           if new_successes >= required do
-            %{state | state: :closed, failures: 0, successes: 0}
+            new = %{state | state: :closed, failures: 0, successes: 0}
+            emit(:closed, new)
+            new
           else
             %{state | successes: new_successes}
           end
@@ -186,9 +197,9 @@ defmodule Arrea.CircuitBreaker do
           %{state | successes: state.successes + 1}
 
         :open ->
-          # Éxito mientras estaba abierto (llamada directa a success/1):
-          # se cierra el circuito y se resetean contadores.
-          %{state | state: :closed, failures: 0, successes: 0}
+          new = %{state | state: :closed, failures: 0, successes: 0}
+          emit(:closed, new)
+          new
       end
 
     {:noreply, new_state}
@@ -205,10 +216,22 @@ defmodule Arrea.CircuitBreaker do
         # Se resetean también los éxitos acumulados para que el próximo
         # attempt starts from zero.
         state.state == :half_open ->
-          %{state | state: :open, failures: new_failures, successes: 0, last_failure_at: now_ms}
+          new = %{
+            state
+            | state: :open,
+              failures: new_failures,
+              successes: 0,
+              last_failure_at: now_ms
+          }
+
+          emit(:open, new)
+          new
 
         new_failures >= state.threshold ->
-          %{state | state: :open, failures: new_failures, last_failure_at: now_ms}
+          new = %{state | state: :open, failures: new_failures, last_failure_at: now_ms}
+          emit(:open, new)
+          emit(:trip, new)
+          new
 
         true ->
           %{state | failures: new_failures}
@@ -229,13 +252,28 @@ defmodule Arrea.CircuitBreaker do
   @spec safe_call(atom(), atom()) :: {:allowed, State.t()} | {:blocked, atom()} | :not_found
   defp safe_call(name, request) do
     case Registry.lookup(Arrea.CircuitBreaker.Registry, name) do
-      [{pid, _}] -> GenServer.call(pid, request)
-      [] -> :not_found
+      [{pid, _}] ->
+        try do
+          GenServer.call(pid, request)
+        catch
+          :exit, _ -> :not_found
+        end
+
+      [] ->
+        :not_found
     end
   end
 
   @spec via_tuple(atom()) :: {:via, Registry, {Arrea.CircuitBreaker.Registry, atom()}}
   defp via_tuple(name), do: {:via, Registry, {Arrea.CircuitBreaker.Registry, name}}
+
+  defp emit(event, state) do
+    :telemetry.execute(
+      [:arrea, :circuit_breaker, event],
+      %{},
+      %{name: state.name, failures: state.failures, threshold: state.threshold}
+    )
+  end
 
   # Usa tiempo monotónico para ser inmune a cambios de reloj del sistema.
   @spec should_retry_from_state?(State.t()) :: boolean()

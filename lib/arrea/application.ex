@@ -1,4 +1,6 @@
 defmodule Arrea.Application do
+  alias Arrea.Telemetry.Metrics
+
   @moduledoc """
   OTP Application callback for `Arrea`.
 
@@ -11,6 +13,7 @@ defmodule Arrea.Application do
 
   @impl true
   def start(_type, _args) do
+    Metrics.setup()
     Arrea.Supervisor.start_link([])
   end
 end

@@ -2,13 +2,13 @@ defmodule Arrea.Worker do
   @moduledoc """
   Worker GenServer for task execution.
 
-  ## Ciclo de vida
+  ## Lifecycle
 
-  1. `init/1` — Inicializa estado y se registra en `Arrea.Monitor`.
-  2. `handle_info(:execute_task, state)` — Executes la primera tarea de la cola.
-  3. `handle_cast({:message, msg}, state)` — Procesa mensajes recibidos de otros workers.
-  4. `terminate/2` — Notifica al Monitor si el worker terminó de forma inesperada.
-     Si terminó por su propio flujo normal (todas las tareas completadas o error
+  1. `init/1` — Initializes state and registers in `Arrea.Monitor`.
+  2. `handle_info(:execute_task, state)` — Executes the first task in the queue.
+  3. `handle_cast({:message, msg}, state)` — Processes messages received from other workers.
+  4. `terminate/2` — Notifies the Monitor if the worker ended unexpectedly.
+     If it ended through its own normal flow (all tasks completed or error
      handled), the notification was already emitted before `{:stop, ...}` and
      `terminate` does not duplicate it.
 
@@ -36,9 +36,10 @@ defmodule Arrea.Worker do
 
   require Logger
 
-  alias Arrea.Config
   alias Arrea.{Leader, Monitor, WorkerState}
+  alias Arrea.Telemetry.Events, as: TE
   alias Arrea.Telemetry.Metrics, as: TelemetryMetrics
+  alias Arrea.Worker.ErrorPolicy
 
   @doc """
   Inicia un worker con opciones configurables.
@@ -123,19 +124,20 @@ defmodule Arrea.Worker do
     monitor_ok =
       case safe_register_worker(id, state) do
         :ok ->
-          if log?, do: Logger.debug("[Worker #{inspect(id)}] Registrado en Monitor")
+          if log?, do: Logger.debug("[Worker #{inspect(id)}] Registered in Monitor")
           true
 
         {:error, reason} ->
           if log? do
             Logger.warning(
-              "[Worker #{inspect(id)}] No se pudo registrar en Monitor: #{inspect(reason)}"
+              "[Worker #{inspect(id)}] Failed to register in Monitor: #{inspect(reason)}"
             )
           end
 
           false
       end
 
+    TE.emit_worker(:started, %{}, %{worker_id: id, tasks_count: length(tasks)})
     notify_event(%{type: :worker_started, worker_id: id})
 
     if monitor_ok do
@@ -201,12 +203,12 @@ defmodule Arrea.Worker do
 
     if state.log? do
       Logger.info(
-        "[Worker #{inspect(state.id)}] Terminado: #{inspect(format_terminate_reason(reason))}"
+        "[Worker #{inspect(state.id)}] Terminated: #{inspect(format_terminate_reason(reason))}"
       )
     end
 
-    # Solo notifica al Monitor si el worker no terminó por su propio flujo.
-    # Cuando handle_task_success o notify_error_and_stop ya llamaron a
+    # Only notify the Monitor if the worker did not finish through its own flow.
+    # When handle_task_success or notify_error_and_stop already called
     # safe_worker_finished, el estado tiene status :finished o :error.
     # This prevents double counting in the Monitor statistics.
     unless state.status in [:finished, :error] do
@@ -247,6 +249,12 @@ defmodule Arrea.Worker do
 
     if result_state.tasks == [] do
       ended_at = System.monotonic_time(:millisecond)
+
+      TE.emit_worker(:completed, %{}, %{
+        worker_id: state.id,
+        duration_ms: ended_at - state.started_at
+      })
+
       notify_event(%{type: :finished, worker_id: state.id})
       safe_worker_finished(state.id, :success, ended_at)
       # status :finished marca que terminate/2 no debe re-notificar al Monitor
@@ -285,6 +293,7 @@ defmodule Arrea.Worker do
   end
 
   defp notify_error_and_stop(state, reason, new_state) do
+    TE.emit_worker(:error, %{}, %{worker_id: state.id, reason: reason})
     notify_event(%{type: :error, worker_id: state.id, reason: reason})
 
     if state.parent do
@@ -302,60 +311,22 @@ defmodule Arrea.Worker do
 
   @spec safe_register_worker(any(), any()) :: :ok | {:error, term()}
   defp safe_register_worker(worker_id, state) do
-    case Process.whereis(Arrea.Monitor) do
-      pid when is_pid(pid) ->
-        try do
-          Monitor.register_worker(worker_id, state)
-          :ok
-        rescue
-          e -> {:error, {:monitor_error, e}}
-        catch
-          :exit, reason -> {:error, {:monitor_exit, reason}}
-        end
-
-      nil ->
-        {:error, :monitor_not_running}
-    end
+    Arrea.Worker.Registry.safe_register_worker(worker_id, state)
   end
 
   @spec safe_update_worker(term(), map()) :: :ok
   defp safe_update_worker(worker_id, updates) do
-    safe_monitor_call(fn -> Monitor.update_worker(worker_id, updates) end)
+    Arrea.Worker.Registry.safe_update_worker(worker_id, updates)
   end
 
   @spec safe_worker_finished(term(), atom(), integer()) :: :ok
   defp safe_worker_finished(worker_id, status, duration_ms) do
-    safe_monitor_call(fn -> Monitor.worker_finished(worker_id, status, duration_ms) end)
+    Arrea.Worker.Registry.safe_worker_finished(worker_id, status, duration_ms)
   end
 
   @spec safe_notify_monitor_finished(term(), term()) :: :ok
   defp safe_notify_monitor_finished(worker_id, reason) do
-    safe_monitor_call(fn ->
-      ended_at = System.monotonic_time(:millisecond)
-
-      status =
-        case reason do
-          :normal -> :finished
-          {:error, _} -> :finished
-          _ -> :error
-        end
-
-      Monitor.worker_finished(worker_id, status, ended_at)
-    end)
-  end
-
-  @spec safe_monitor_call((-> :ok | {:ok, term()})) :: :ok
-  defp safe_monitor_call(func) do
-    func.()
-    :ok
-  rescue
-    e ->
-      Logger.warning("[Worker] Monitor call failed: #{inspect(e)}")
-      :ok
-  catch
-    :exit, reason ->
-      Logger.warning("[Worker] Monitor call exited: #{inspect(reason)}")
-      :ok
+    Arrea.Worker.Registry.safe_notify_monitor_finished(worker_id, reason)
   end
 
   # ── Task execution ──────────────────────────────────────────────────
@@ -424,72 +395,7 @@ defmodule Arrea.Worker do
   # ── Política de errores ──────────────────────────────────────────────────
 
   defp handle_error_with_policy(state, reason, error_state) do
-    # Si no hay política explícita, se construye una desde la config global.
-    # Esto garantiza que Config.set/2 y config.exs del proyecto consumidor
-    # afecten al comportamiento por defecto de los workers.
-    policy = state.policy || build_default_policy()
-
-    new_retry_count = state.retry_count + 1
-
-    context = %{
-      worker_id: state.id,
-      task_index: state.total_tasks - length(error_state.tasks),
-      retry_count: new_retry_count
-    }
-
-    case handle_policy_error(policy, reason, new_retry_count, context) do
-      {:retry, delay} ->
-        retry_state = %{error_state | retry_count: new_retry_count}
-        {:retry, delay, retry_state}
-
-      :stop ->
-        :stop
-
-      :continue ->
-        :continue
-
-      {:custom, custom_action} ->
-        handle_custom_action(custom_action, error_state, new_retry_count)
-    end
-  end
-
-  @spec build_default_policy() :: map()
-  defp build_default_policy do
-    %{
-      on_error: Config.get(:default_policy, :retry),
-      max_retries: Config.get(:max_retries, 3),
-      retry_delay: Config.get(:retry_delay, 1_000)
-    }
-  end
-
-  defp handle_policy_error(policy, _reason, retry_count, _context) do
-    max = Map.get(policy, :max_retries, 3)
-    delay = Map.get(policy, :retry_delay, 1000)
-
-    case Map.get(policy, :on_error, :retry) do
-      :retry when retry_count >= max -> :stop
-      :retry -> {:retry, delay}
-      :stop -> :stop
-      :continue -> :continue
-      :log_and_continue -> :continue
-      fun when is_function(fun) -> {:custom, fun}
-    end
-  end
-
-  @dialyzer {:nowarn_function, {:handle_custom_action, 3}}
-  defp handle_custom_action(:retry, error_state, retry_count) do
-    {:retry, 1000, %{error_state | retry_count: retry_count}}
-  end
-
-  defp handle_custom_action(:stop, _error_state, _retry_count), do: :stop
-  defp handle_custom_action(:continue, _error_state, _retry_count), do: :continue
-
-  defp handle_custom_action(custom_fn, error_state, retry_count) when is_function(custom_fn) do
-    case custom_fn.(error_state) do
-      :retry -> {:retry, 1000, %{error_state | retry_count: retry_count}}
-      :stop -> :stop
-      :continue -> :continue
-    end
+    ErrorPolicy.handle_error_with_policy(state, reason, error_state)
   end
 
   # ── Helpers ──────────────────────────────────────────────────────────────

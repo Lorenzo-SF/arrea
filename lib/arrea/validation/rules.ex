@@ -99,17 +99,19 @@ defmodule Arrea.Validation.Rules do
   end
 
   # Returns true when the matched dangerous pattern is "sudo " and the
-  # part of the command after "sudo " starts with any allowlisted prefix.
-  # The check is purely string-based — the allowlist is a list of literal
-  # prefixes like ["systemctl start", "systemctl restart"].
+  # part of the command after "sudo " starts with any allowlisted token sequence.
+  # Uses token-by-token comparison so "systemctl startfire" does not match
+  # the allowlist entry "systemctl start".
   @spec sudo_whitelisted?(String.t(), String.t()) :: boolean()
   defp sudo_whitelisted?("sudo ", cmd_lower) do
     case String.split(cmd_lower, "sudo ", parts: 2) do
       [_, suffix] ->
+        suffix_tokens = String.split(String.trim(suffix))
         allowlist = Config.get(:sudo_allowlist, [])
 
         Enum.any?(allowlist, fn prefix ->
-          String.starts_with?(String.trim(suffix), prefix)
+          prefix_tokens = String.split(prefix)
+          prefix_tokens == Enum.take(suffix_tokens, length(prefix_tokens))
         end)
 
       _ ->

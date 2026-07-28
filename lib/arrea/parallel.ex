@@ -1,5 +1,16 @@
 defmodule Arrea.Parallel do
-  @moduledoc false
+  @moduledoc """
+  Parallel execution engine with `Task.async_stream`, timeouts, and shell fallback.
+
+  Provides three entry points:
+
+    * `execute/2` — single command, synchronous via `Task.async`
+    * `run/2` — multiple commands/functions in parallel via `Leader`
+    * `run_sync/2` — parallel execution with ordered results
+
+  All shell execution flows through `Arrea.Command.execute/2` and benefits from
+  `Arrea.CircuitBreaker`, telemetry events, and timeout enforcement.
+  """
 
   alias Arrea.Command
   alias Arrea.Leader

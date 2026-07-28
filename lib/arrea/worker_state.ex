@@ -29,18 +29,18 @@ defmodule Arrea.WorkerState do
   """
 
   @type t :: %__MODULE__{
-          id: atom() | String.t(),
-          tasks: [function()],
+          id: term(),
+          tasks: [any()],
           status: :idle | :running | :finished | :error,
           started_at: integer() | nil,
           ended_at: integer() | nil,
-          parent: pid() | nil,
-          log?: boolean(),
+          parent: term() | nil,
+          log?: term(),
           progress: float(),
           total_tasks: non_neg_integer(),
           completed_tasks: non_neg_integer(),
           results: [term()],
-          policy: map() | nil,
+          policy: term(),
           retry_count: non_neg_integer(),
           warnings: [term()]
         }
@@ -84,12 +84,7 @@ defmodule Arrea.WorkerState do
       %WorkerState{id: :worker_1, parent: #PID<...>, log?: true, ...}
 
   """
-  @dialyzer {:nowarn_function, {:new, 3}}
-  @spec new(
-          id :: term(),
-          tasks :: [(-> term())],
-          opts :: keyword()
-        ) :: t()
+  @spec new(term(), [any()], keyword()) :: %__MODULE__{}
   def new(id, tasks, opts \\ []) do
     %__MODULE__{
       id: id,
