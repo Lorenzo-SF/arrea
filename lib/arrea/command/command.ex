@@ -69,6 +69,10 @@ defmodule Arrea.Command do
 
   @default_timeout 30_000
 
+  @known_languages ~w(elixir erlang node ruby python go rust java crystal)
+                   |> Enum.map(&{&1, :"asdf_#{&1}"})
+                   |> Map.new()
+
   @shell_configs %{
     "bash" => "~/.bashrc",
     "zsh" => "~/.zshrc",
@@ -236,8 +240,14 @@ defmodule Arrea.Command do
   @spec execute_with_asdf(String.t(), atom(), String.t(), keyword()) ::
           {:ok, result()} | {:error, term()}
   def execute_with_asdf(cmd, language, version, opts \\ []) do
-    lang_key = String.to_existing_atom("asdf_#{language}")
-    execute(cmd, Keyword.put(opts, lang_key, version))
+    lang_str = to_string(language)
+    lang_key = Map.get(@known_languages, lang_str)
+
+    if lang_key do
+      execute(cmd, Keyword.put(opts, lang_key, version))
+    else
+      {:error, {:unknown_language, language}}
+    end
   end
 
   @doc """
@@ -358,6 +368,7 @@ defmodule Arrea.Command do
     opts
     |> Enum.filter(fn {key, _} -> key |> to_string() |> String.starts_with?("mise_") end)
     |> Enum.map(fn {key, version} ->
+      validate_version!(version)
       lang = key |> to_string() |> String.replace_prefix("mise_", "")
       "#{lang}@#{version}"
     end)
@@ -372,6 +383,7 @@ defmodule Arrea.Command do
       opts
       |> Enum.filter(fn {key, _} -> key |> to_string() |> String.starts_with?("asdf_") end)
       |> Enum.map(fn {key, version} ->
+        validate_version!(version)
         lang = key |> to_string() |> String.replace_prefix("asdf_", "")
         "export ASDF_#{String.upcase(lang)}_VERSION=#{version}"
       end)
@@ -441,4 +453,15 @@ defmodule Arrea.Command do
   end
 
   defp parse_passwd_shell(_), do: "/bin/sh"
+
+  @version_regex ~r/^[a-zA-Z0-9._-]+$/
+  defp validate_version!(version) when is_binary(version) do
+    unless Regex.match?(@version_regex, version) do
+      raise ArgumentError, "invalid version #{inspect(version)}"
+    end
+  end
+
+  defp validate_version!(version) do
+    raise ArgumentError, "invalid version #{inspect(version)}"
+  end
 end

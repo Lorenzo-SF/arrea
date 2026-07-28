@@ -6,14 +6,15 @@ defmodule Arrea.Validation.Validator do
   de validation usados por `Arrea.Command` y la CLI.
   """
 
+  alias Arrea.Telemetry.Events, as: TE
   alias Arrea.Validation.Rules
 
   @type validation_error :: atom() | {atom(), term()}
 
   @doc """
-  Valida una cadena de comando shell.
+  Validates a shell command string.
 
-  Executes todas las security checks estandar en secuencia.
+  Executes all standard security checks in sequence.
 
   ## Returns
 
@@ -30,16 +31,24 @@ defmodule Arrea.Validation.Validator do
   """
   @spec validate_command(String.t()) :: {:ok, String.t()} | {:error, validation_error()}
   def validate_command(cmd) do
-    with {:ok, cmd} <- Rules.not_empty(cmd),
-         {:ok, cmd} <- Rules.max_length(cmd, 4096),
-         {:ok, cmd} <- Rules.no_injection(cmd),
-         do: Rules.safe_command(cmd)
+    result =
+      with {:ok, cmd} <- Rules.not_empty(cmd),
+           {:ok, cmd} <- Rules.max_length(cmd, 4096),
+           {:ok, cmd} <- Rules.no_injection(cmd),
+           do: Rules.safe_command(cmd)
+
+    case result do
+      {:ok, _} -> TE.emit_validation(:passed, %{}, %{command: cmd})
+      {:error, reason} -> TE.emit_validation(:failed, %{}, %{command: cmd, reason: reason})
+    end
+
+    result
   end
 
   @doc """
-  Valida una lista de comandos, retornando todos los resultados.
+  Validates a list of commands, returning all results.
 
-  Returns `{:ok, commands}` solo si TODOS los comandos pasan la validation.
+  Returns `{:ok, commands}` only if ALL commands pass validation.
   Returns `{:error, errors}` con una lista de tuplas `{indice, razon}` para los fallos.
   """
   @spec validate_commands([String.t()]) ::

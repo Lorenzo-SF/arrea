@@ -99,4 +99,46 @@ defmodule Arrea.CommandTest do
       assert Command.which("definitely_not_a_real_binary_12345") == nil
     end
   end
+
+  describe "version validation" do
+    test "build_asdf_prefix rejects injection attempts" do
+      assert_raise ArgumentError, fn ->
+        Command.build_asdf_prefix(asdf_elixir: "1.0; rm -rf /")
+      end
+
+      assert_raise ArgumentError, fn ->
+        Command.build_asdf_prefix(asdf_node: "$(cat /etc/passwd)")
+      end
+
+      assert_raise ArgumentError, fn ->
+        Command.build_asdf_prefix(asdf_python: "`whoami`")
+      end
+
+      assert_raise ArgumentError, fn ->
+        Command.build_asdf_prefix(asdf_ruby: "1.0\nrm -rf /")
+      end
+    end
+
+    test "build_mise_args rejects injection attempts" do
+      assert_raise ArgumentError, fn ->
+        Command.build_mise_args(mise_elixir: "1.0; rm -rf /")
+      end
+
+      assert_raise ArgumentError, fn ->
+        Command.build_mise_args(mise_node: "$(cat /etc/passwd)")
+      end
+    end
+
+    test "build_asdf_prefix accepts valid versions" do
+      assert Command.build_asdf_prefix(asdf_elixir: "1.18.0") != ""
+      assert Command.build_asdf_prefix(asdf_node: "20.0.0") != ""
+      assert Command.build_asdf_prefix(asdf_erlang: "27.0-rc1") != ""
+      assert Command.build_asdf_prefix(asdf_python: "3.12.0_beta1") != ""
+    end
+
+    test "build_mise_args accepts valid versions" do
+      assert Command.build_mise_args(mise_elixir: "1.18.0") != []
+      assert Command.build_mise_args(mise_node: "20.0.0") != []
+    end
+  end
 end

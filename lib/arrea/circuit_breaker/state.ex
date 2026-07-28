@@ -2,6 +2,7 @@ defmodule Arrea.CircuitBreaker.State do
   @moduledoc false
 
   @type t :: %__MODULE__{
+          name: atom(),
           state: :closed | :open | :half_open,
           failures: non_neg_integer(),
           successes: non_neg_integer(),
@@ -14,7 +15,8 @@ defmodule Arrea.CircuitBreaker.State do
           last_failure_at: integer() | nil
         }
 
-  defstruct state: :closed,
+  defstruct name: nil,
+            state: :closed,
             failures: 0,
             successes: 0,
             threshold: 5,

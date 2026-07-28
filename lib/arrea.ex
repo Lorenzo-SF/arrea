@@ -60,6 +60,7 @@ defmodule Arrea do
 
   alias Arrea.Config, as: Config
   alias Arrea.{Leader, Monitor, Parallel}
+  alias Arrea.Telemetry.Events, as: TE
   alias Arrea.Validation.Validator
 
   @type execution_option ::
@@ -89,11 +90,10 @@ defmodule Arrea do
       - `:timeout` — Timeout in ms (default `30_000`). Real timeout: cancels execution.
       - `:retry` — Whether to retry on failure
       - `:shell` — Shell to use (highest priority over config and environment)
-      - `:validate` — Run safety validation before executing (default `false`).
-        Set to `true` to reject dangerous commands (`:rm -rf`, `:sudo `, etc.)
-        before they run. Disabled by default to preserve prior behaviour;
-        trusted internal callers (e.g. Apero's info commands) can keep the
-        default and pay no per-call cost.
+      - `:validate` — Run safety validation before executing (default `true`).
+        Pass `:validate, false` to skip validation for trusted internal
+        commands. When validation is enabled, dangerous commands
+        (`:rm -rf`, `:sudo `, etc.) are rejected before they run.
 
   ## Returns
 
@@ -108,8 +108,11 @@ defmodule Arrea do
       iex> Arrea.execute(fn -> :work end)
       {:ok, %Arrea.Result{success: true, data: :work, failures: []}}
 
-      iex> Arrea.execute("rm -rf /tmp", validate: true)
+      iex> Arrea.execute("rm -rf /tmp")
       {:error, %Arrea.Error{code: :validation_failed, message: "{:dangerous_command, \\"rm -rf\\"}"}}
+
+      iex> Arrea.execute("echo hello", validate: false)
+      {:ok, %Arrea.Result{success: true, data: "hello\\n", failures: []}}
   """
   @spec execute(binary() | (-> term()), [execution_option()]) ::
           {:ok, Arrea.Result.t()} | {:error, Arrea.Error.t()}
@@ -122,11 +125,7 @@ defmodule Arrea do
   defp do_execute(cmd, opts) do
     start_time = System.monotonic_time()
 
-    :telemetry.execute(
-      [:arrea, :engine, :execute, :start],
-      %{},
-      %{command: safe_command_label(cmd)}
-    )
+    TE.emit_engine(:execute, :start, %{}, %{command: safe_command_label(cmd)})
 
     result = Parallel.execute(cmd, opts)
 
@@ -139,11 +138,10 @@ defmodule Arrea do
 
     case result do
       {:ok, r} ->
-        :telemetry.execute(
-          [:arrea, :engine, :execute, :stop],
-          %{duration: duration_ms},
-          %{command: safe_command_label(cmd), success: true}
-        )
+        TE.emit_engine(:execute, :stop, %{duration: duration_ms}, %{
+          command: safe_command_label(cmd),
+          success: true
+        })
 
         {:ok, %Arrea.Result{success: true, data: r, failures: []}}
 
@@ -162,13 +160,13 @@ defmodule Arrea do
   end
 
   # Runs `Validator.validate_command/1` for binary commands when the caller
-  # passed `:validate, true`. Default `false` to preserve the historical
-  # behaviour of `Arrea.execute/2` (only batch `Arrea.run/2` validated).
-  # Functions and the default path skip validation entirely.
+  # passed `:validate, true`. Default is `true` (the safe option) — pass
+  # `:validate, false` only if you're certain the command is safe.
+  # Functions always skip validation (they're not shell invocations).
   @spec maybe_validate_cmd(binary() | (-> term()), keyword()) ::
           :ok | {:error, Arrea.Error.t()}
   defp maybe_validate_cmd(cmd, opts) when is_binary(cmd) do
-    if Keyword.get(opts, :validate, false) do
+    if Keyword.get(opts, :validate, true) do
       case Validator.validate_command(cmd) do
         {:ok, _} ->
           :ok
@@ -213,19 +211,11 @@ defmodule Arrea do
   def run(commands, opts \\ []) when is_list(commands) do
     workers = Keyword.get(opts, :workers, max_workers())
 
-    :telemetry.execute(
-      [:arrea, :engine, :run, :start],
-      %{},
-      %{count: length(commands), workers: workers}
-    )
+    TE.emit_engine(:run, :start, %{}, %{count: length(commands), workers: workers})
 
     case Parallel.run(commands, opts) do
       {:ok, batch_id} ->
-        :telemetry.execute(
-          [:arrea, :engine, :run, :stop],
-          %{},
-          %{batch_id: batch_id}
-        )
+        TE.emit_engine(:run, :stop, %{}, %{batch_id: batch_id})
 
         {:ok,
          %Arrea.Result{
@@ -235,11 +225,7 @@ defmodule Arrea do
          }}
 
       {:ok, batch_id, info} ->
-        :telemetry.execute(
-          [:arrea, :engine, :run, :stop],
-          %{},
-          %{batch_id: batch_id, partial: true}
-        )
+        TE.emit_engine(:run, :stop, %{}, %{batch_id: batch_id, partial: true})
 
         {:ok,
          %Arrea.Result{
@@ -336,7 +322,7 @@ defmodule Arrea do
   # ── Helpers privados ──────────────────────────────────────────────────────
 
   @spec safe_command_label(binary() | function()) :: String.t()
-  defp safe_command_label(cmd) when is_binary(cmd), do: String.slice(cmd, 0, 100)
+  defp safe_command_label(cmd) when is_binary(cmd), do: String.slice(cmd, 0, 500)
 
   defp safe_command_label(fun) when is_function(fun),
     do: "function/#{:erlang.fun_info(fun)[:arity]}"

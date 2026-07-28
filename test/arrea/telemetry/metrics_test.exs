@@ -15,6 +15,12 @@ defmodule Arrea.Telemetry.MetricsTest do
   end
 
   describe "get_current/0" do
+    setup do
+      # Reset counters before reading them (test ordering is non-deterministic)
+      Metrics.setup()
+      :ok
+    end
+
     test "returns a map with all expected keys" do
       metrics = Metrics.get_current()
 
