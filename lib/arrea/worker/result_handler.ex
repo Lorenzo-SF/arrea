@@ -11,6 +11,8 @@ defmodule Arrea.Worker.ResultHandler do
   next state machine action (`{:noreply, state}`, `{:stop, reason, state}`).
   """
 
+  alias Arrea.Worker.Scheduler
+
   @doc """
   Handles a successful task result.
 
@@ -53,7 +55,7 @@ defmodule Arrea.Worker.ResultHandler do
   @spec handle_task_error(map(), term(), map()) ::
           {:noreply, map()} | {:stop, {:error, term()}, map()}
   def handle_task_error(state, reason, new_state) do
-    case Arrea.Worker.Scheduler.handle_error_with_policy(state, reason, new_state) do
+    case Scheduler.handle_error_with_policy(state, reason, new_state) do
       {:retry, delay, retry_state} ->
         Process.send_after(self(), :execute_task, delay)
         {:noreply, retry_state}

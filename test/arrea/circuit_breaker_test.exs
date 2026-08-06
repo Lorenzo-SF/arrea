@@ -131,4 +131,105 @@ defmodule Arrea.CircuitBreakerTest do
     Process.sleep(10)
     assert CircuitBreaker.get_state(test_id) == :closed
   end
+
+  # ── AR-5: config validators ─────────────────────────────────────────────
+
+  test "validate_opts/1 accepts valid options" do
+    assert :ok = CircuitBreaker.validate_opts(name: :db, threshold: 3, timeout: 100)
+  end
+
+  test "validate_opts/1 rejects missing name" do
+    assert {:error, %Arrea.Error{code: :invalid_config}} = CircuitBreaker.validate_opts(threshold: 3)
+  end
+
+  test "validate_opts/1 rejects threshold below 1" do
+    assert {:error, %Arrea.Error{code: :invalid_config}} =
+             CircuitBreaker.validate_opts(name: :db, threshold: 0)
+
+    assert {:error, %Arrea.Error{code: :invalid_config}} =
+             CircuitBreaker.validate_opts(name: :db, threshold: -1)
+  end
+
+  test "validate_opts/1 rejects timeout not greater than zero" do
+    assert {:error, %Arrea.Error{code: :invalid_config}} =
+             CircuitBreaker.validate_opts(name: :db, timeout: 0)
+
+    assert {:error, %Arrea.Error{code: :invalid_config}} =
+             CircuitBreaker.validate_opts(name: :db, timeout: -50)
+  end
+
+  test "start_link rejects invalid options with typed error" do
+    assert {:error, %Arrea.Error{code: :invalid_config, message: msg}} =
+             CircuitBreaker.start_link(name: :bad_threshold, threshold: -1)
+
+    assert msg =~ "threshold"
+
+    assert {:error, %Arrea.Error{code: :invalid_config}} =
+             CircuitBreaker.start_link(name: :bad_timeout, timeout: 0)
+
+    assert {:error, %Arrea.Error{code: :invalid_config}} =
+             CircuitBreaker.start_link(threshold: 3)
+  end
+
+  # ── AR-4: single-flight probe in half_open ─────────────────────────────
+
+  test "half_open blocks callers while a probe is in progress",
+       %{pid: pid, test_id: test_id} do
+    :sys.replace_state(pid, fn state -> %{state | state: :half_open, probe_in_progress: true} end)
+
+    assert {:error, :circuit_open} = CircuitBreaker.call(test_id, fn -> :never_run end)
+  end
+
+  test "only the first caller probes in half_open; the rest are blocked",
+       %{pid: pid, test_id: test_id} do
+    :sys.replace_state(pid, fn state -> %{state | state: :half_open} end)
+    parent = self()
+
+    for _i <- 1..10 do
+      spawn(fn ->
+        result =
+          CircuitBreaker.call(test_id, fn ->
+            send(parent, :probe_executed)
+            :probe
+          end)
+
+        send(parent, {:result, result})
+      end)
+    end
+
+    results =
+      for _ <- 1..10 do
+        receive do
+          {:result, result} -> result
+        after
+          2_000 -> :no_result
+        end
+      end
+
+    assert Enum.count(results, &(&1 == {:ok, :probe})) == 1
+    assert Enum.count(results, &(&1 == {:error, :circuit_open})) == 9
+    assert_receive :probe_executed, 100
+    refute_receive :probe_executed, 50
+  end
+
+  test "probe flag resets after the probe succeeds", %{pid: pid, test_id: test_id} do
+    :sys.replace_state(pid, fn state -> %{state | state: :half_open, probe_in_progress: true} end)
+
+    CircuitBreaker.success(test_id)
+    Process.sleep(10)
+
+    # The probe completed successfully, so a new caller is allowed again.
+    assert {:ok, :probe} = CircuitBreaker.call(test_id, fn -> :probe end)
+    Process.sleep(10)
+    assert CircuitBreaker.get_state(test_id) == :closed
+  end
+
+  test "probe flag resets after the probe fails", %{pid: pid, test_id: test_id} do
+    :sys.replace_state(pid, fn state -> %{state | state: :half_open, probe_in_progress: true} end)
+
+    CircuitBreaker.failure(test_id)
+    Process.sleep(10)
+
+    assert CircuitBreaker.get_state(test_id) == :open
+  end
 end
