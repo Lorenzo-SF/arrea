@@ -87,7 +87,8 @@ defmodule Arrea.Bulkhead do
 
       iex> {:ok, :done} = Arrea.Bulkhead.run(:workers, fn -> :done end)
   """
-  @spec run(atom(), (-> term())) :: {:ok, term()} | {:error, :bulkhead_full | :bulkhead_not_found | :execution_failed}
+  @spec run(atom(), (-> term())) ::
+          {:ok, term()} | {:error, :bulkhead_full | :bulkhead_not_found | :execution_failed}
   def run(name, fun) when is_atom(name) and is_function(fun, 0) do
     case safe_call(name, :acquire) do
       :ok ->

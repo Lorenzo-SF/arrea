@@ -177,11 +177,15 @@ defmodule Arrea.RateLimiter do
   defp ensure_apero do
     if Code.ensure_loaded?(RateLimit) do
       case Application.ensure_all_started(:apero) do
-        {:ok, _apps} -> :ok
-        {:error, reason} -> {:error, %Arrea.Error{code: :apero_unavailable, message: inspect(reason)}}
+        {:ok, _apps} ->
+          :ok
+
+        {:error, reason} ->
+          {:error, %Arrea.Error{code: :apero_unavailable, message: inspect(reason)}}
       end
     else
-      {:error, %Arrea.Error{code: :apero_unavailable, message: "Apero.RateLimit is not available"}}
+      {:error,
+       %Arrea.Error{code: :apero_unavailable, message: "Apero.RateLimit is not available"}}
     end
   end
 
@@ -198,8 +202,7 @@ defmodule Arrea.RateLimiter do
         {:error, %Arrea.Error{code: :invalid_config, message: "refill_per_second must be >= 0"}}
 
       invalid_bucket?(opts) ->
-        {:error,
-         %Arrea.Error{code: :invalid_config, message: "bucket must be :token or :leaky"}}
+        {:error, %Arrea.Error{code: :invalid_config, message: "bucket must be :token or :leaky"}}
 
       true ->
         :ok

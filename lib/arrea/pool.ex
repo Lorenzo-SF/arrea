@@ -264,8 +264,7 @@ defmodule Arrea.Pool do
         {:error, %Arrea.Error{code: :invalid_config, message: "max_overflow must be >= 0"}}
 
       invalid_checkin_timeout?(opts) ->
-        {:error,
-         %Arrea.Error{code: :invalid_config, message: "checkin_timeout must be > 0"}}
+        {:error, %Arrea.Error{code: :invalid_config, message: "checkin_timeout must be > 0"}}
 
       true ->
         :ok
@@ -361,7 +360,9 @@ defmodule Arrea.Pool do
   @spec unlease(pid(), map()) :: map()
   defp unlease(pid, state) do
     case Map.pop(state.leased_pids, pid) do
-      {nil, _} -> state
+      {nil, _} ->
+        state
+
       {ref, leased_pids} ->
         Process.demonitor(ref, [:flush])
         %{state | leased: max(0, state.leased - 1), leased_pids: leased_pids}

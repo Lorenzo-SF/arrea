@@ -139,7 +139,8 @@ defmodule Arrea.CircuitBreakerTest do
   end
 
   test "validate_opts/1 rejects missing name" do
-    assert {:error, %Arrea.Error{code: :invalid_config}} = CircuitBreaker.validate_opts(threshold: 3)
+    assert {:error, %Arrea.Error{code: :invalid_config}} =
+             CircuitBreaker.validate_opts(threshold: 3)
   end
 
   test "validate_opts/1 rejects threshold below 1" do

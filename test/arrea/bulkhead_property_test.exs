@@ -29,8 +29,10 @@ defmodule Arrea.BulkheadPropertyTest do
   end
 
   property "active calls never exceed max_concurrent" do
-    check all max <- integer(1..4),
-              durations <- list_of(integer(1..15), min_length: 1, max_length: 30) do
+    check all(
+            max <- integer(1..4),
+            durations <- list_of(integer(1..15), min_length: 1, max_length: 30)
+          ) do
       reset_bulkhead(@test_id, max)
       parent = self()
 
@@ -71,8 +73,10 @@ defmodule Arrea.BulkheadPropertyTest do
   end
 
   property "results are consistent: accepted + rejected == number of calls" do
-    check all max <- integer(1..3),
-              durations <- list_of(integer(1..5), min_length: 1, max_length: 15) do
+    check all(
+            max <- integer(1..3),
+            durations <- list_of(integer(1..5), min_length: 1, max_length: 15)
+          ) do
       reset_bulkhead(@count_test_id, max)
 
       tasks =
@@ -100,14 +104,17 @@ defmodule Arrea.BulkheadPropertyTest do
   end
 
   defp reset_bulkhead(test_id, max) do
-    :sys.replace_state(Registry.lookup(Arrea.Bulkhead.Registry, test_id) |> hd() |> elem(0), fn _ ->
-      %{
-        name: test_id,
-        max_concurrent: max,
-        active: 0,
-        accepted: 0,
-        rejected: 0
-      }
-    end)
+    :sys.replace_state(
+      Registry.lookup(Arrea.Bulkhead.Registry, test_id) |> hd() |> elem(0),
+      fn _ ->
+        %{
+          name: test_id,
+          max_concurrent: max,
+          active: 0,
+          accepted: 0,
+          rejected: 0
+        }
+      end
+    )
   end
 end

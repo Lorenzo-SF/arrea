@@ -46,7 +46,7 @@ defmodule Arrea.CircuitBreakerPropertyTest do
   end
 
   property "matches the reference model and never executes while open" do
-    check all ops <- list_of(member_of(@ops), max_length: 40) do
+    check all(ops <- list_of(member_of(@ops), max_length: 40)) do
       pid = breaker_pid()
       reset_breaker(pid)
       model = %Model{}
@@ -133,15 +133,25 @@ defmodule Arrea.CircuitBreakerPropertyTest do
         maybe_close(%{model | successes: model.successes + 1})
 
       :failure ->
-        {%{model | state: :open, failures: model.failures + 1, successes: 0,
-           last_failure_tick: model.tick}, :no_call}
+        {%{
+           model
+           | state: :open,
+             failures: model.failures + 1,
+             successes: 0,
+             last_failure_tick: model.tick
+         }, :no_call}
 
       :call_ok ->
         maybe_close(%{model | successes: model.successes + 1})
 
       :call_fail ->
-        {%{model | state: :open, failures: model.failures + 1, successes: 0,
-           last_failure_tick: model.tick}, :allowed}
+        {%{
+           model
+           | state: :open,
+             failures: model.failures + 1,
+             successes: 0,
+             last_failure_tick: model.tick
+         }, :allowed}
     end
   end
 
@@ -184,8 +194,11 @@ defmodule Arrea.CircuitBreakerPropertyTest do
 
   defp apply_to_breaker(op, verdict) do
     case op do
-      :failure -> CircuitBreaker.failure(@test_id)
-      :success -> CircuitBreaker.success(@test_id)
+      :failure ->
+        CircuitBreaker.failure(@test_id)
+
+      :success ->
+        CircuitBreaker.success(@test_id)
 
       :call_ok ->
         result = CircuitBreaker.call(@test_id, fn -> :ok end)

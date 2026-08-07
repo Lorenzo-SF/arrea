@@ -152,8 +152,13 @@ defmodule Arrea.MixProject do
         "format",
         "compile",
         "dialyzer",
-        "cmd sh -c 'MIX_ENV=test mix test --cover'",
+        "cmd sh -c 'MIX_ENV=test mix test --cover --exclude wip_cli'",
         "cmd sh -c 'alaja json \"$(mix credo --strict --format=json)\"'"
+      ],
+      bench: [
+        "run bench/bulkhead.exs",
+        "run bench/rate_limiter.exs",
+        "run bench/pool.exs"
       ]
     ]
   end

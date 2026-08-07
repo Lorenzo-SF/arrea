@@ -37,6 +37,7 @@ defmodule Arrea.BulkheadTest do
         Task.async(fn ->
           Bulkhead.run(test_id, fn ->
             send(parent, {started, i})
+
             receive do
               {:release_slot, ^i} -> :finished
             after
@@ -101,6 +102,7 @@ defmodule Arrea.BulkheadTest do
       Task.async(fn ->
         Bulkhead.run(test_id, fn ->
           send(parent, :held)
+
           receive do
             :go -> :done
           end
