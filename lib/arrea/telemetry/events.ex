@@ -38,7 +38,50 @@ defmodule Arrea.Telemetry.Events do
   ### System
   - `[:arrea, :system, :started]` — System started
   - `[:arrea, :system, :stopped]` — System stopped
+
+  ### Circuit Breaker
+  - `[:arrea, :circuit_breaker, :closed]` — Circuit closed (normal op)
+  - `[:arrea, :circuit_breaker, :open]` — Circuit opened
+  - `[:arrea, :circuit_breaker, :trip]` — Circuit tripped
+  - `[:arrea, :circuit_breaker, :half_open]` — Circuit entered probe state
+
+  ### Bulkhead
+  - `[:arrea, :bulkhead, :acquired]` — A slot was acquired
+  - `[:arrea, :bulkhead, :released]` — A slot was released
+  - `[:arrea, :bulkhead, :rejected]` — A call was rejected (full)
+
+  ### RateLimiter
+  - `[:arrea, :rate_limiter, :allowed]` — Tokens were consumed
+  - `[:arrea, :rate_limiter, :denied]` — Request denied (bucket empty)
   """
+
+  @typedoc """
+  Metadata for `[:arrea, :circuit_breaker, *]` events.
+
+  All fields are guaranteed present and correctly typed, so handlers
+  can pattern match without defensive `Map.get/3` calls.
+  """
+  @type circuit_breaker_metadata :: %{
+          name: atom(),
+          failures: non_neg_integer(),
+          threshold: pos_integer(),
+          successes: non_neg_integer(),
+          state: :closed | :open | :half_open
+        }
+
+  @typedoc "Metadata for `[:arrea, :bulkhead, *]` events."
+  @type bulkhead_metadata :: %{
+          name: atom(),
+          max_concurrent: pos_integer(),
+          active: non_neg_integer()
+        }
+
+  @typedoc "Metadata for `[:arrea, :rate_limiter, *]` events."
+  @type rate_limiter_metadata :: %{
+          name: atom(),
+          capacity: pos_integer(),
+          n: pos_integer()
+        }
 
   # Worker events
   def worker_started, do: [:arrea, :worker, :started]
@@ -134,6 +177,62 @@ defmodule Arrea.Telemetry.Events do
   def emit_long_running(type, measurements \\ %{}, metadata \\ %{}) do
     event = [:arrea, :long_running, type]
     :telemetry.execute(event, measurements, metadata)
+    :ok
+  end
+
+  @doc """
+  Emits a circuit breaker event with typed metadata.
+
+  ## Example
+
+      iex> Arrea.Telemetry.Events.emit_circuit_breaker(:open, %{
+      ...>   name: :my_breaker,
+      ...>   failures: 5,
+      ...>   threshold: 5,
+      ...>   successes: 0,
+      ...>   state: :open
+      ...> })
+      :ok
+  """
+  @spec emit_circuit_breaker(atom(), circuit_breaker_metadata()) :: :ok
+  def emit_circuit_breaker(event, metadata) do
+    :telemetry.execute([:arrea, :circuit_breaker, event], %{}, metadata)
+    :ok
+  end
+
+  @doc """
+  Emits a bulkhead event with typed metadata.
+
+  ## Example
+
+      iex> Arrea.Telemetry.Events.emit_bulkhead(:rejected, %{
+      ...>   name: :db_pool,
+      ...>   max_concurrent: 4,
+      ...>   active: 4
+      ...> })
+      :ok
+  """
+  @spec emit_bulkhead(atom(), bulkhead_metadata()) :: :ok
+  def emit_bulkhead(event, metadata) do
+    :telemetry.execute([:arrea, :bulkhead, event], %{}, metadata)
+    :ok
+  end
+
+  @doc """
+  Emits a rate limiter event with typed metadata.
+
+  ## Example
+
+      iex> Arrea.Telemetry.Events.emit_rate_limiter(:denied, %{
+      ...>   name: :llm_api,
+      ...>   capacity: 10,
+      ...>   n: 1
+      ...> })
+      :ok
+  """
+  @spec emit_rate_limiter(atom(), rate_limiter_metadata()) :: :ok
+  def emit_rate_limiter(event, metadata) do
+    :telemetry.execute([:arrea, :rate_limiter, event], %{}, metadata)
     :ok
   end
 end

@@ -12,7 +12,10 @@ defmodule Arrea.CircuitBreaker.State do
           # Nil while the circuit is closed or it has never failed.
           # Monotonic time is used so that system clock adjustments (NTP, etc.)
           # do not affect the recovery timeout calculation.
-          last_failure_at: integer() | nil
+          last_failure_at: integer() | nil,
+          # True while a single-flight probe is running in :half_open.
+          # Guards against the retry storm where every caller probes at once.
+          probe_in_progress: boolean()
         }
 
   defstruct name: nil,
@@ -21,5 +24,6 @@ defmodule Arrea.CircuitBreaker.State do
             successes: 0,
             threshold: 5,
             timeout: 60_000,
-            last_failure_at: nil
+            last_failure_at: nil,
+            probe_in_progress: false
 end

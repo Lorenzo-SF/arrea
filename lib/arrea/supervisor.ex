@@ -7,11 +7,14 @@ defmodule Arrea.Supervisor do
   Children are ordered by dependency: each process depends on the
   previous ones, and only the dependent processes are restarted when one fails.
 
-      1. Registry (Arrea.Registry)              — Workers
+      1. Registry (Arrea.Registry)                — Workers
       2. Registry (Arrea.CircuitBreaker.Registry) — Circuit breakers
-      3. Arrea.Monitor                           — Depende de los registries
-      4. Arrea.Leader                            — Depende de Monitor y registries
-      5. Arrea.WorkerSupervisor                  — Depende de Leader y registries
+      3. Registry (Arrea.Bulkhead.Registry)       — Bulkheads
+      4. Registry (Arrea.RateLimiter.Registry)    — Rate limiters
+      5. Registry (Arrea.Pool.Registry)           — Pools
+      6. Arrea.Monitor                            — Depende de los registries
+      7. Arrea.Leader                             — Depende de Monitor y registries
+      8. Arrea.WorkerSupervisor                   — Depende de Leader y registries
 
   Con `:rest_for_one`:
   - Si falla un **Registry** → reinicia todo (raro; los registries son muy estables)
@@ -32,6 +35,9 @@ defmodule Arrea.Supervisor do
     children = [
       {Registry, keys: :unique, name: Arrea.Registry},
       {Registry, keys: :unique, name: Arrea.CircuitBreaker.Registry},
+      {Registry, keys: :unique, name: Arrea.Bulkhead.Registry},
+      {Registry, keys: :unique, name: Arrea.RateLimiter.Registry},
+      {Registry, keys: :unique, name: Arrea.Pool.Registry},
       Arrea.Monitor,
       Arrea.Leader,
       {DynamicSupervisor, name: Arrea.WorkerSupervisor, strategy: :one_for_one}
