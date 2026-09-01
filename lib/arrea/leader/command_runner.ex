@@ -2,6 +2,7 @@ defmodule Arrea.Leader.CommandRunner do
   @moduledoc false
 
   alias Arrea.Command
+  alias Arrea.Leader
   alias Arrea.Validation.Rules
 
   require Logger
@@ -187,7 +188,7 @@ defmodule Arrea.Leader.CommandRunner do
       {:ok, pid} ->
         Process.monitor(pid)
 
-        Arrea.Leader.notify_event(%{
+        Leader.notify_event(%{
           type: :worker_started,
           batch: batch_id,
           worker: worker_id,
@@ -205,7 +206,7 @@ defmodule Arrea.Leader.CommandRunner do
 
         Logger.warning("[Leader] #{log_msg}")
 
-        Arrea.Leader.notify_event(%{
+        Leader.notify_event(%{
           type: :worker_error,
           batch: batch_id,
           worker: worker_id,

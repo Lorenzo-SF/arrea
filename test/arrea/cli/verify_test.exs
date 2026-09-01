@@ -19,7 +19,9 @@ defmodule Arrea.CLI.VerifyTest do
 
   describe "runtime_opts!/1 (backwards-compatible)" do
     test "function exists with correct arity" do
+      Code.ensure_loaded(Verify)
       assert function_exported?(Verify, :runtime_opts!, 1)
+      assert Verify.runtime_opts!(%{}) == :ok
     end
 
     test "accepts empty options" do

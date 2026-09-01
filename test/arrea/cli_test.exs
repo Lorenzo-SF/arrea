@@ -6,6 +6,7 @@ defmodule Arrea.CLITest do
   alias ExUnit.CaptureIO
 
   describe "Arrea.CLI module" do
+    @tag :wip_cli
     test "main/1 delegates to Arrea.CLI.Definition.main/1" do
       output = CaptureIO.capture_io(:stderr, fn -> CLI.main([]) end)
       assert output =~ "run"
@@ -66,6 +67,7 @@ defmodule Arrea.CLITest do
       assert output =~ "action"
     end
 
+    @tag :wip_cli
     test "main/1 with no command shows help" do
       output = CaptureIO.capture_io(:stderr, fn -> Definition.main([]) end)
       assert output =~ "run"

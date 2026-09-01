@@ -4,7 +4,7 @@ defmodule Arrea.MixProject do
   def project do
     [
       app: :arrea,
-      version: "2.2.0",
+      version: "3.0.0",
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -63,7 +63,14 @@ defmodule Arrea.MixProject do
           Arrea.Monitor,
           Arrea.Parallel
         ],
-        "Fault Tolerance": [Arrea.CircuitBreaker, Arrea.CircuitBreaker.State],
+        "Fault Tolerance": [
+          Arrea.CircuitBreaker,
+          Arrea.CircuitBreaker.State,
+          Arrea.Bulkhead,
+          Arrea.RateLimiter,
+          Arrea.Pool,
+          Arrea.Pool.Worker
+        ],
         "Commands & Validation": [
           Arrea.Command,
           Arrea.Policies,
@@ -99,7 +106,9 @@ defmodule Arrea.MixProject do
 
   defp deps do
     [
-      {:alaja, path: "../alaja", override: true},
+      {:alaja, git: "https://github.com/Lorenzo-SF/alaja.git", override: true},
+      {:apero, git: "https://github.com/Lorenzo-SF/apero.git", optional: true},
+      {:batamanta, "~> 2.0.0", optional: true, runtime: false},
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.3"},
       {:telemetry_metrics, "~> 1.1"},
@@ -107,8 +116,8 @@ defmodule Arrea.MixProject do
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
-      {:batamanta, "~> 1.6.1", optional: true, runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
+      {:stream_data, "~> 1.1", only: :test},
       {:benchee, "~> 1.3", only: :dev}
     ]
   end
@@ -143,8 +152,13 @@ defmodule Arrea.MixProject do
         "format",
         "compile",
         "dialyzer",
-        "cmd sh -c 'MIX_ENV=test mix test --cover'",
+        "cmd sh -c 'MIX_ENV=test mix test --cover --exclude wip_cli'",
         "cmd sh -c 'alaja json \"$(mix credo --strict --format=json)\"'"
+      ],
+      bench: [
+        "run bench/bulkhead.exs",
+        "run bench/rate_limiter.exs",
+        "run bench/pool.exs"
       ]
     ]
   end

@@ -39,10 +39,49 @@ defmodule Arrea.CircuitBreaker do
 
   use GenServer
   alias Arrea.CircuitBreaker.State
+  alias Arrea.Telemetry.Events, as: TE
 
   require Logger
 
   @type state :: :closed | :open | :half_open
+
+  @doc """
+  Validates circuit breaker options.
+
+  Returns `:ok` when the options are valid or
+  `{:error, %Arrea.Error{}}` with a `:invalid_config` code describing the
+  first problem found.
+
+  ## Validation rules
+
+    - `:name` or `:id` must be present
+    - `:threshold` must be `>= 1`
+    - `:timeout` must be `> 0`
+
+  ## Example
+
+      iex> Arrea.CircuitBreaker.validate_opts(name: :db, threshold: 3)
+      :ok
+
+      iex> Arrea.CircuitBreaker.validate_opts(name: :db, threshold: -1)
+      {:error, %Arrea.Error{code: :invalid_config}}
+  """
+  @spec validate_opts(keyword()) :: :ok | {:error, Arrea.Error.t()}
+  def validate_opts(opts) do
+    cond do
+      not (Keyword.has_key?(opts, :name) or Keyword.has_key?(opts, :id)) ->
+        {:error, %Arrea.Error{code: :invalid_config, message: "name (or id) option is required"}}
+
+      invalid_threshold?(opts) ->
+        {:error, %Arrea.Error{code: :invalid_config, message: "threshold must be >= 1"}}
+
+      invalid_timeout?(opts) ->
+        {:error, %Arrea.Error{code: :invalid_config, message: "timeout must be > 0"}}
+
+      true ->
+        :ok
+    end
+  end
 
   @doc """
   Starts a circuit breaker with a unique name (required in `opts`).
@@ -53,11 +92,21 @@ defmodule Arrea.CircuitBreaker do
     - `:id` — Alias of `:name`, accepted for convenience
     - `:threshold` — Number of consecutive failures to open the circuit (default: 5)
     - `:timeout` — Time in ms before transitioning to `:half_open` (default: 60_000)
+
+  Invalid options (missing name, `threshold < 1`, `timeout <= 0`) are
+  rejected with `{:error, %Arrea.Error{code: :invalid_config}}` instead
+  of silently accepted.
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
-    name = Keyword.get(opts, :name) || Keyword.fetch!(opts, :id)
-    GenServer.start_link(__MODULE__, opts, name: via_tuple(name))
+    case validate_opts(opts) do
+      :ok ->
+        name = Keyword.get(opts, :name) || Keyword.fetch!(opts, :id)
+        GenServer.start_link(__MODULE__, opts, name: via_tuple(name))
+
+      {:error, %Arrea.Error{} = error} ->
+        {:error, error}
+    end
   end
 
   @doc """
@@ -132,18 +181,28 @@ defmodule Arrea.CircuitBreaker do
 
   @impl true
   def init(opts) do
-    {:ok,
-     %State{
-       name: Keyword.get(opts, :name) || Keyword.fetch!(opts, :id),
-       threshold:
-         Keyword.get(opts, :threshold, Application.get_env(:arrea, :circuit_breaker_threshold, 5)),
-       timeout:
-         Keyword.get(
-           opts,
-           :timeout,
-           Application.get_env(:arrea, :circuit_breaker_timeout, 60_000)
-         )
-     }}
+    case validate_opts(opts) do
+      :ok ->
+        {:ok,
+         %State{
+           name: Keyword.get(opts, :name) || Keyword.fetch!(opts, :id),
+           threshold:
+             Keyword.get(
+               opts,
+               :threshold,
+               Application.get_env(:arrea, :circuit_breaker_threshold, 5)
+             ),
+           timeout:
+             Keyword.get(
+               opts,
+               :timeout,
+               Application.get_env(:arrea, :circuit_breaker_timeout, 60_000)
+             )
+         }}
+
+      {:error, %Arrea.Error{} = error} ->
+        {:stop, {:shutdown, error}}
+    end
   end
 
   @impl true
@@ -155,6 +214,12 @@ defmodule Arrea.CircuitBreaker do
   # Atomically decide to allow or block execution.
   # When the circuit is open and the timeout has expired, transition to
   # half_open and allow one trial execution.
+  #
+  # Single-flight probe: in :half_open only the first caller is allowed to
+  # probe (probe_in_progress is set). Every concurrent caller that arrives
+  # while a probe is running gets :circuit_open, so the retry storm is
+  # replaced by a single probe whose outcome is recorded by the casts
+  # :success/:failure that reset the flag.
   @impl true
   def handle_call(:get_state_and_check, _from, state) do
     case state.state do
@@ -171,7 +236,11 @@ defmodule Arrea.CircuitBreaker do
         end
 
       :half_open ->
-        {:reply, {:allowed, state}, state}
+        if state.probe_in_progress do
+          {:reply, {:blocked, :circuit_open}, state}
+        else
+          {:reply, {:allowed, state}, %{state | probe_in_progress: true}}
+        end
     end
   end
 
@@ -186,18 +255,18 @@ defmodule Arrea.CircuitBreaker do
           required = max(1, div(state.threshold, 2))
 
           if new_successes >= required do
-            new = %{state | state: :closed, failures: 0, successes: 0}
+            new = %{state | state: :closed, failures: 0, successes: 0, probe_in_progress: false}
             emit(:closed, new)
             new
           else
-            %{state | successes: new_successes}
+            %{state | successes: new_successes, probe_in_progress: false}
           end
 
         :closed ->
           %{state | successes: state.successes + 1}
 
         :open ->
-          new = %{state | state: :closed, failures: 0, successes: 0}
+          new = %{state | state: :closed, failures: 0, successes: 0, probe_in_progress: false}
           emit(:closed, new)
           new
       end
@@ -221,7 +290,8 @@ defmodule Arrea.CircuitBreaker do
             | state: :open,
               failures: new_failures,
               successes: 0,
-              last_failure_at: now_ms
+              last_failure_at: now_ms,
+              probe_in_progress: false
           }
 
           emit(:open, new)
@@ -256,6 +326,8 @@ defmodule Arrea.CircuitBreaker do
         try do
           GenServer.call(pid, request)
         catch
+          :exit, {:timeout, _} -> :not_found
+          :exit, :timeout -> :not_found
           :exit, _ -> :not_found
         end
 
@@ -267,12 +339,31 @@ defmodule Arrea.CircuitBreaker do
   @spec via_tuple(atom()) :: {:via, Registry, {Arrea.CircuitBreaker.Registry, atom()}}
   defp via_tuple(name), do: {:via, Registry, {Arrea.CircuitBreaker.Registry, name}}
 
-  defp emit(event, state) do
-    :telemetry.execute(
-      [:arrea, :circuit_breaker, event],
-      %{},
-      %{name: state.name, failures: state.failures, threshold: state.threshold}
-    )
+  @spec emit(atom(), State.t()) :: :ok
+  defp emit(event, %State{} = state) do
+    TE.emit_circuit_breaker(event, %{
+      name: state.name,
+      failures: state.failures,
+      threshold: state.threshold,
+      successes: state.successes,
+      state: state.state
+    })
+  end
+
+  @spec invalid_threshold?(keyword()) :: boolean()
+  defp invalid_threshold?(opts) do
+    case Keyword.get(opts, :threshold) do
+      nil -> false
+      value -> not (is_integer(value) and value >= 1)
+    end
+  end
+
+  @spec invalid_timeout?(keyword()) :: boolean()
+  defp invalid_timeout?(opts) do
+    case Keyword.get(opts, :timeout) do
+      nil -> false
+      value -> not (is_integer(value) and value > 0)
+    end
   end
 
   # Usa tiempo monotónico para ser inmune a cambios de reloj del sistema.

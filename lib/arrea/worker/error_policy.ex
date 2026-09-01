@@ -62,19 +62,9 @@ defmodule Arrea.Worker.ErrorPolicy do
     end
   end
 
-  @spec handle_custom_action(
-          :retry | :stop | :continue | (map() -> :retry | :stop | :continue),
-          map(),
-          non_neg_integer()
-        ) :: {:retry, pos_integer(), map()} | :stop | :continue
-  defp handle_custom_action(:retry, error_state, retry_count) do
-    {:retry, 1000, %{error_state | retry_count: retry_count}}
-  end
-
-  defp handle_custom_action(:stop, _error_state, _retry_count), do: :stop
-  defp handle_custom_action(:continue, _error_state, _retry_count), do: :continue
-
-  defp handle_custom_action(custom_fn, error_state, retry_count) when is_function(custom_fn) do
+  @spec handle_custom_action((map() -> :retry | :stop | :continue), map(), non_neg_integer()) ::
+          {:retry, pos_integer(), map()} | :stop | :continue
+  defp handle_custom_action(custom_fn, error_state, retry_count) do
     case custom_fn.(error_state) do
       :retry -> {:retry, 1000, %{error_state | retry_count: retry_count}}
       :stop -> :stop

@@ -72,15 +72,20 @@ end
 
 - **Parallel execution** — Run commands and functions concurrently with configurable worker pools via `Arrea.run/2`
 - **Synchronous execution** — Execute single commands with `Arrea.execute/2`, including shell integration with real timeout cancellation
-- **Circuit breaker** — Protect external calls with automatic open/close/half-open state transitions to prevent cascading failures
+- **Circuit breaker** — Protect external calls with automatic open/close/half-open state transitions. Single-flight probe (only one caller drives the half-open trial) prevents thundering herds against a flaky upstream.
+- **Bulkhead** — Cap concurrent operations against a fixed-capacity downstream. Fails fast with `{:error, :bulkhead_full}` instead of queueing.
+- **Rate limiter** — Token/leaky bucket wrapping `Apero.RateLimit`. Enforce per-API quotas with millisecond precision.
+- **Worker pool** — Keep expensive workers (subprocesses, GPU contexts, SSH tunnels) warm. Check out / check in with automatic replenishment.
 - **Command validation** — Built-in validation rules blocking dangerous commands (`rm -rf`, `sudo`, `mkfs`, fork bombs, injection patterns)
-- **Telemetry** — Rich event system with worker lifecycle, task progress, system metrics, and circuit breaker state tracking
+- **Telemetry** — Rich event system with worker lifecycle, task progress, system metrics, and circuit breaker state tracking. Typed metadata for every fault-tolerance event.
 - **Error policies** — Configurable error handling: retry, stop, continue, or custom handlers with retry counts and delays
 - **Worker monitoring** — Subscribe to real-time events: worker start, completion, failure, and progress updates
 - **Batch execution** — Submit command batches with worker limits and per-worker timeouts
 - **ASDF/mise integration** — Runtime version management via `asdf` or `mise` with support for `--asdf-<runtime>` CLI flags and `mise exec` wrapping
-- **Custom shell** — Configurable shell per-command (`--shell`), via config (`Arrea.Config.set(:shell, ...)`), or auto-detected from `$SHELL` with automatic config file sourcing
+- **Custom shell** — Configurable shell per-command (`--shell`), via config (`Arrea.Config.set(:shell, ...))`, or auto-detected from `$SHELL` with automatic config file sourcing
 - **Structured results** — `Arrea.Result` and `Arrea.Error` structs for consistent return types
+
+See [`guides/choosing_primitives.md`](guides/choosing_primitives.md) for a decision tree on which primitive to use.
 
 ## CLI
 

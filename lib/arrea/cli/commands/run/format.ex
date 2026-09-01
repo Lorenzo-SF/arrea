@@ -1,12 +1,13 @@
 defmodule Arrea.CLI.Commands.Run.Format do
   @moduledoc false
 
-  alias Arrea.Error
-  alias Arrea.Result
   alias Alaja.CLI.Parser
   alias Alaja.Components.{Header, Separator}
   alias Alaja.Printer
   alias Alaja.Structures.ChunkText
+
+  alias Arrea.Error
+  alias Arrea.Result
 
   @spinner_frames ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
