@@ -106,8 +106,9 @@ defmodule Arrea.MixProject do
 
   defp deps do
     [
-      {:alaja, path: "../alaja", override: true},
-      {:apero, path: "../apero", optional: true},
+      {:alaja, git: "https://github.com/Lorenzo-SF/alaja.git", override: true},
+      {:apero, git: "https://github.com/Lorenzo-SF/apero.git", optional: true},
+      {:batamanta, "~> 2.0.0", optional: true, runtime: false},
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.3"},
       {:telemetry_metrics, "~> 1.1"},
@@ -115,7 +116,6 @@ defmodule Arrea.MixProject do
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
-      {:batamanta, "~> 1.6.1", optional: true, runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
       {:stream_data, "~> 1.1", only: :test},
       {:benchee, "~> 1.3", only: :dev}
