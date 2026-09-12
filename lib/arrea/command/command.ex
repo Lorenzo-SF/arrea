@@ -251,6 +251,78 @@ defmodule Arrea.Command do
   end
 
   @doc """
+  Streams stdout/stderr from a command via callback.
+
+  Useful for long-running commands (builds, tests, migrations) where
+  you want to surface output incrementally.  The callback receives
+  `{:stdout, chunk}` or `{:stderr, chunk}` messages.
+
+  Returns `{:ok, exit_code}` on success (exit_code 0).
+  Returns `{:error, reason}` on failure.
+
+  ## Examples
+
+      iex> Arrea.Command.execute_stream("echo hello",
+      ...>   fn msg -> IO.inspect(msg) end)
+      {:ok, 0}
+  """
+  @spec execute_stream(String.t(), (({:stdout | :stderr, binary()} -> any())) ::
+                                     any(),
+          keyword()) :: {:ok, non_neg_integer()} | {:error, term()}
+  def execute_stream(cmd, callback, opts \\ []) when is_function(callback, 1) do
+    with :ok <- maybe_validate(cmd, opts) do
+      shell = resolve_shell(opts)
+      timeout = Keyword.get(opts, :timeout, @default_timeout)
+      cd = Keyword.get(opts, :cd, ".")
+      env = build_env(opts)
+      full_cmd = build_full_command(cmd, opts)
+
+      port =
+        Port.open(
+          {:spawn_executable, shell},
+          [
+            {:args, ["-c", full_cmd]},
+            {:cd, cd},
+            {:env, env},
+            {:stderr_to_stdout, false},
+            {:line, 4096}
+          ]
+        )
+
+      # Drain port messages until exit_status.
+      drain_port(port, callback)
+      exit_code = wait_exit(port, timeout)
+      Port.close(port)
+      {:ok, exit_code}
+    end
+  rescue
+    e -> {:error, Exception.message(e)}
+  end
+
+  # Private: receive all pending messages from port and dispatch.
+  defp drain_port(port, callback) do
+    receive do
+      {^port, {:data, line}} ->
+        callback.({:stdout, line})
+        drain_port(port, callback)
+
+      {^port, {:exit_status, _code}} ->
+        :ok
+    after
+      0 -> :ok
+    end
+  end
+
+  # Private: wait for port exit or timeout.
+  defp wait_exit(port, timeout) do
+    receive do
+      {^port, {:exit_status, code}} -> code
+    after
+      timeout -> 124
+    end
+  end
+
+  @doc """
   Parses a raw result map into a structured form.
 
   Detects common error patterns and returns tagged results.
