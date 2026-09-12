@@ -35,6 +35,19 @@ defmodule Arrea.CircuitBreaker do
 
   Each breaker is registered through `Registry` with a unique name under
   `Arrea.CircuitBreaker.Registry`.
+
+  ## ETS row convention
+
+  State rows are flat tuples (NOT `{key, value}` wrapped tuples).
+  The key is at position 1 and the value fields start at position 2.
+  This is required because `:ets.update_counter/3` and `:ets.update_element/3`
+  use 1-based positions (Erlang convention), so positions in the
+  `update_*` calls MUST match the tuple positions in `:ets.lookup/2`.
+
+  Example row: `{{:state, :my_breaker}, :closed, 0, nil, 0}` where
+  positions 2-5 are state/failures/opened_at/half_open_tokens.
+
+  Use `Kernel.elem/2` (1-based) when reading, not `Map.get/2`.
   """
 
   use GenServer

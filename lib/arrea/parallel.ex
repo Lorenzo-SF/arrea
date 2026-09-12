@@ -40,7 +40,13 @@ defmodule Arrea.Parallel do
         do_execute(cmd, exec_opts)
       end)
 
-    Task.await(task, timeout)
+    # P0-2: use Task.yield + Task.shutdown so a slow task is killed
+    # when the timeout expires instead of waiting forever.
+    case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
+      {:ok, result} -> result
+      {:exit, reason} -> {:error, {:task_exit, reason}}
+      nil -> {:error, :timeout}
+    end
   end
 
   @doc """
