@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `arrea --help` (and `arrea`, `arrea -h`, `arrea help`) now renders the
+  Arrea command summary with the Arrea banner, instead of Alaja's full
+  command reference. Same goes for `arrea --version`, which now reports
+  the arrea version (e.g. `arrea 3.0.0`) instead of `alaja 3.0.0`.
+  Fix lives in `Alaja.CLI.Definition` (commit d43b18f in alaja main).
+
 ## [3.0.0] - 2026-08-07
 
 ### Added
