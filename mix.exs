@@ -52,16 +52,24 @@ defmodule Arrea.MixProject do
       main: "readme",
       source_url: "https://github.com/Lorenzo-SF/arrea",
       homepage_url: "https://github.com/Lorenzo-SF/arrea",
+      source_ref: "3.0.0",
       extras: ["README.md", "docs/README_ES.md", "LICENSE.md"],
       groups_for_modules: [
         "Core API": [Arrea, Arrea.Config, Arrea.Error, Arrea.Result],
         "OTP Core": [
           Arrea.Leader,
+          Arrea.Leader.CommandRunner,
           Arrea.Worker,
           Arrea.WorkerState,
+          Arrea.Worker.ErrorPolicy,
+          Arrea.Worker.Registry,
+          Arrea.Worker.ResultHandler,
+          Arrea.Worker.Scheduler,
           Arrea.Supervisor,
           Arrea.Monitor,
-          Arrea.Parallel
+          Arrea.Parallel,
+          Arrea.LongRunning,
+          Arrea.Registry
         ],
         "Fault Tolerance": [
           Arrea.CircuitBreaker,
@@ -82,13 +90,17 @@ defmodule Arrea.MixProject do
           Arrea.Telemetry,
           Arrea.Telemetry.Events,
           Arrea.Telemetry.Metrics,
+          Arrea.Telemetry.CommunicationMetrics,
           Arrea.Telemetry.DebugHandler
         ],
-        CLI: [Arrea.CLI, Arrea.CLI.Definition],
+        CLI: [Arrea.CLI, Arrea.CLI.Definition, Arrea.CLI.Verify],
         "CLI Commands": [
           Arrea.CLI.Commands.Action,
           Arrea.CLI.Commands.Config,
-          Arrea.CLI.Commands.Run
+          Arrea.CLI.Commands.Nodes,
+          Arrea.CLI.Commands.Run,
+          Arrea.CLI.Commands.Run.Execution,
+          Arrea.CLI.Commands.Run.Format
         ],
         Utilities: [Arrea.Subscribers, Arrea.Logging.Behaviour, Arrea.Application]
       ]
@@ -106,8 +118,8 @@ defmodule Arrea.MixProject do
 
   defp deps do
     [
-      {:alaja, git: "https://github.com/Lorenzo-SF/alaja.git", override: true},
-      {:apero, git: "https://github.com/Lorenzo-SF/apero.git", optional: true},
+      {:alaja, "~> 3.1", override: true},
+      {:apero, "~> 4.0", optional: true},
       {:batamanta, "~> 2.0.0", optional: true, runtime: false},
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.3"},
