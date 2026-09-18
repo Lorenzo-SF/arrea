@@ -1,5 +1,10 @@
 # Arrea
 
+[![Hex Version](https://img.shields.io/hexpm/v/arrea.svg)](https://hex.pm/packages/arrea)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3.svg)](https://hexdocs.pm/arrea)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE.md)
+[![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)](https://github.com/Lorenzo-SF/arrea)
+
 Async process orchestrator and telemetry for Elixir.
 
 Arrea is an OTP-based library that provides parallel process execution, worker management, circuit breaker protection, command validation, and built-in telemetry for monitoring your Elixir applications.
@@ -11,7 +16,7 @@ Add Arrea to your `mix.exs`:
 ```elixir
 def deps do
   [
-    {:arrea, github: "Lorenzo-SF/arrea"}
+    {:arrea, "~> 3.0"}
   ]
 end
 ```
@@ -512,7 +517,7 @@ Add `arrea` to your `mix.exs` dependencies:
 ```elixir
 def deps do
   [
-    {:arrea, github: "Lorenzo-SF/arrea"}
+    {:arrea, "~> 3.0"}
   ]
 end
 ```
