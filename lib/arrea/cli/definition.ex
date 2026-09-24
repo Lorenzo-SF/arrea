@@ -101,7 +101,7 @@ defmodule Arrea.CLI.Definition do
   # ── run ─────────────────────────────────────────────────────────────────────
 
   command "run", "Execute shell commands in parallel with progress tracking" do
-    flag(:command, :string, repeatable: true)
+    flag(:command, :string, repeatable: true, required: true)
     flag(:parallel, :integer, default: 4)
     flag(:timeout, :integer, default: 30_000)
     flag(:quiet, :boolean, short: :q)

@@ -10,31 +10,50 @@ defmodule Arrea.CLI.Commands.Run do
   @doc false
   @spec execute_with_opts(map(), keyword()) :: :ok | no_return()
   def execute_with_opts(opts, exec_opts) do
-    commands = Map.get(opts, :command, [])
+    commands = normalise_commands(opts[:command])
     validate_commands!(commands)
     exec_opts = merge_shell_opt(opts, exec_opts)
     Execution.execute(opts, exec_opts)
   end
 
-  defp validate_commands!(commands) do
-    if commands == [] do
-      IO.puts(:stderr, "Error: at least one --command is required")
-      System.halt(1)
-    end
+  # The DSL gives us a list when `--command` is repeated, but a bare
+  # string when it's used once. We always work with a list downstream
+  # so the validator and the executor don't have to special-case
+  # nil / string / list.
+  #
+  # Exposed via `@doc false` so tests can pin the contract; the
+  # public surface stays `execute_with_opts/2`.
+  @doc false
+  @spec normalise_commands(term()) :: [String.t()]
+  def normalise_commands(nil), do: []
+  def normalise_commands(cmd) when is_binary(cmd), do: [cmd]
+  def normalise_commands(commands) when is_list(commands), do: commands
 
+  @doc false
+  @spec validate_commands!([String.t()]) :: :ok | no_return()
+  def validate_commands!([]) do
+    IO.puts(:stderr, "Error: at least one --command is required")
+    System.halt(1)
+  end
+
+  def validate_commands!(commands) when is_list(commands) do
     errors =
       commands
       |> Enum.with_index()
-      |> Enum.reduce([], fn {cmd, idx}, acc ->
+      |> Enum.flat_map(fn {cmd, idx} ->
         case Validator.validate_command(cmd) do
-          {:ok, _} -> acc
-          {:error, reason} -> acc ++ ["[#{idx + 1}] #{cmd}: #{inspect(reason)}"]
+          {:ok, _} -> []
+          {:error, reason} -> ["[#{idx + 1}] #{cmd}: #{inspect(reason)}"]
         end
       end)
 
-    if errors != [] do
+    if errors == [] do
+      :ok
+    else
       IO.puts(:stderr, "Error: command validation failed")
+
       Enum.each(errors, fn e -> IO.puts(:stderr, "  #{e}") end)
+
       System.halt(1)
     end
   end

@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`arrea run --comand "x"` no longer crashes with a cryptic
+  `Protocol.UndefinedError protocol Enumerable not implemented for
+  Atom. Got value: nil`**. The DSL now rejects unknown `--xxx`
+  flags with a clear error message (e.g.
+  `Error: unknown flag '--comand'` plus
+  `Did you mean? --command`). The flag typo used to be silently
+  dropped as a positional argument, which left `:command` unset,
+  which crashed deep inside `Run.execute_with_opts/2` when
+  `validate_commands!/1` called `Enum.with_index(nil)`. The
+  validation gate lives in `Alaja.CLI.Definition.parse_flags/3`
+  (host-agnostic — every consumer of the DSL benefits from it).
+- **`arrea run` (no flags) exits with a clear missing-required
+  error** instead of crashing on nil. `flag(:command, ...,
+  required: true)` in the DSL is now enforced by the framework's
+  `find_missing_required/2`. Runners see
+  `Error: missing required flags: --command` before the handler
+  ever runs.
+- **`arrea run --command "echo a"` (single command, not repeated)
+  no longer crashes**. The `repeatable: true` flag now normalises
+  its value to a list downstream (`normalise_commands/1`) so the
+  validator and executor never see a bare binary where they
+  expected a list.
+- **`batamanta` dependency bumped from `~> 2.0.0` to `~> 3.0`** so
+  arrea picks up the 3.x line of the build tool that ships the
+  new `:release` format (was `:escript`).
+- `arrea --help` (and `arrea`, `arrea -h`, `arrea help`) now renders the
+  Arrea command summary with the Arrea banner, instead of Alaja's full
+  command reference. Same goes for `arrea --version`, which now reports
+  the arrea version (e.g. `arrea 3.0.0`) instead of `alaja 3.0.0`.
+  Fix lives in `Alaja.CLI.Definition` (commit d43b18f in alaja main).
+
+### Added
+
+- **`Arrea.CLI.Commands.Run.normalise_commands/1`** and
+  **`Arrea.CLI.Commands.Run.validate_commands!/1`** are now
+  `@doc false` public on the module surface so the test suite can
+  pin the contracts without spinning up the full executor.
+- **`test/arrea/cli/dispatch_test.exs`** — end-to-end tests that
+  drive `Arrea.CLI.Definition.dispatch_main/1` against the DSL,
+  locking in the unknown-flag rejection and required-flag
+  enforcement at the runner level (not just the alaja level).
+
 ## [3.0.0] - 2026-09-18
 
 ### Added
