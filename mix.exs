@@ -108,7 +108,7 @@ defmodule Arrea.MixProject do
     [
       {:alaja, git: "https://github.com/Lorenzo-SF/alaja.git", override: true},
       {:apero, git: "https://github.com/Lorenzo-SF/apero.git", optional: true},
-      {:batamanta, "~> 2.0.0", optional: true, runtime: false},
+      {:batamanta, "~> 3.0.0", optional: true, runtime: false, override: true},
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.3"},
       {:telemetry_metrics, "~> 1.1"},
