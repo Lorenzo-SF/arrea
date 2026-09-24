@@ -120,7 +120,7 @@ defmodule Arrea.MixProject do
     [
       {:alaja, "~> 3.1", override: true},
       {:apero, "~> 4.0", optional: true},
-      {:batamanta, "~> 3.0", optional: true, runtime: false},
+      {:batamanta, "~> 2.0", optional: true, runtime: false},
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.3"},
       {:telemetry_metrics, "~> 1.1"},
