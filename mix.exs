@@ -138,7 +138,7 @@ defmodule Arrea.MixProject do
     [
       gen: ["deps.get", "compile", "batamanta", "install"],
       install: fn _ ->
-        dest_dir = Path.expand("~/bin")
+        dest_dir = Path.expand("~/.local/bin")
         File.mkdir_p!(dest_dir)
         config = Mix.Project.config()
         app_name = Atom.to_string(config[:app])
