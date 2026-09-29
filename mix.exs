@@ -112,7 +112,19 @@ defmodule Arrea.MixProject do
       format: :escript,
       execution_mode: :cli,
       compression: 19,
-      binary_name: "Arrea"
+      binary_name: "Arrea",
+      # BEAM-keeps-alive. The wrapper dispatches to a warm Erlang VM over a
+      # Unix-domain socket instead of booting one per invocation. The socket
+      # is namespaced by (app, version, target), so this daemon is Arrea's
+      # own — it is not shared with the other packaged CLIs.
+      #   ARREA_BEAM_ALIVE=<ms>  override the TTL for one shell (max 86_400_000)
+      #   ARREA_BEAM_ALIVE=0     force the legacy cold-start path
+      daemon: [
+        enabled: true,
+        var: "ARREA_BEAM_ALIVE",
+        default_ms: 300_000,
+        request_timeout_ms: 60_000
+      ]
     ]
   end
 
