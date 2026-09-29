@@ -118,8 +118,11 @@ defmodule Arrea.MixProject do
 
   defp deps do
     [
-      {:alaja, "~> 3.1", override: true},
-      {:apero, "~> 4.0", optional: true},
+      # Sibling deps point straight at GitHub: no version bumps to track, no
+      # publish ordering between packages. `MIX_ENV=prod mix hex.publish`
+      # still works if a Hex release is ever needed again.
+      {:alaja, github: "Lorenzo-SF/alaja", override: true},
+      {:apero, github: "Lorenzo-SF/apero", optional: true},
       {:batamanta, "~> 2.0", optional: true, runtime: false},
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.3"},
