@@ -8,12 +8,19 @@ defmodule Arrea.CLI.Commands.Run do
   alias Arrea.Validation.Validator
 
   @doc false
-  @spec execute_with_opts(map(), keyword()) :: :ok | no_return()
+  @spec execute_with_opts(map(), keyword()) :: :ok | :error
   def execute_with_opts(opts, exec_opts) do
     commands = normalise_commands(opts[:command])
-    validate_commands!(commands)
-    exec_opts = merge_shell_opt(opts, exec_opts)
-    Execution.execute(opts, exec_opts)
+
+    # Esto era `validate_commands!(commands)` con el resultado DESCARtADO. Con
+    # `System.halt(1)` dentro no se notaba, porque la VM se moria ahi. Al quitar
+    # el halt, el error se imprime y el comando SE EJECUTA IGUAL, que es peor
+    # que morirse: parece un fallo y no lo es.
+    with :ok <- validate_commands!(commands) do
+      opts
+      |> Map.put(:command, commands)
+      |> Execution.execute(merge_shell_opt(opts, exec_opts))
+    end
   end
 
   # The DSL gives us a list when `--command` is repeated, but a bare
@@ -30,10 +37,10 @@ defmodule Arrea.CLI.Commands.Run do
   def normalise_commands(commands) when is_list(commands), do: commands
 
   @doc false
-  @spec validate_commands!([String.t()]) :: :ok | no_return()
+  @spec validate_commands!([String.t()]) :: :ok | :error
   def validate_commands!([]) do
     IO.puts(:stderr, "Error: at least one --command is required")
-    System.halt(1)
+    :error
   end
 
   def validate_commands!(commands) when is_list(commands) do
@@ -54,7 +61,7 @@ defmodule Arrea.CLI.Commands.Run do
 
       Enum.each(errors, fn e -> IO.puts(:stderr, "  #{e}") end)
 
-      System.halt(1)
+      :error
     end
   end
 

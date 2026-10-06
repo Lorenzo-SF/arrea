@@ -15,6 +15,68 @@ defmodule Arrea.WorkerTest do
     :ok
   end
 
+  # Este bloque no existe por cobertura. Existe porque `send_message/2`
+  # devolvia `:ok` para un worker que NUNCA EXISTIO, y porque lo mismo hace hoy
+  # `get_state/1` tres funciones mas abajo y el reenvio interno ya notifica
+  # `:message_target_not_found`. El fichero sabia hacerlo; la entrada publica no.
+  describe "send_message/2 no miente" do
+    test "a worker vivo devuelve :ok" do
+      # Con `tasks: []` el worker se queda vivo: no tiene nada que ejecutar y
+      # solo sale cuando se le dice. Por eso `Registry.lookup/1` lo encuentra.
+      {:ok, pid} = Worker.start_link(id: :vivo, tasks: [], parent: self())
+      assert Worker.send_message(:vivo, %{type: :ping}) == :ok
+      assert is_pid(Process.alive?(pid) && pid)
+    end
+
+    test "a un worker que no existe dice que no existe, y no :ok" do
+      # El precondicional: no hay nadie con ese id. Sin esto, el test pasaria
+      # igual si el worker existiera y el fix no hiciera nada.
+      assert Registry.lookup(Arrea.Registry, :NUNCA_EXISTIO) == []
+
+      assert Worker.send_message(:NUNCA_EXISTIO, %{type: :ping}) ==
+               {:error, :worker_not_found}
+    end
+
+    test "a un worker que ha muerto dice que no existe" do
+      {:ok, pid} = Worker.start_link(id: :muere, tasks: [], parent: self())
+      ref = Process.monitor(pid)
+      GenServer.stop(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, _}
+
+      assert Worker.send_message(:muere, %{type: :ping}) ==
+               {:error, :worker_not_found}
+    end
+
+    test "el @spec declara el error, y si vuelve a decir :ok esto falla" do
+      # El `@spec` es lo unico que dialyzer lee de esta funcion. Si vuelve a
+      # `:ok` mientras el codigo devuelve el error, dialyzer confirma la mentira
+      # y este test se cae.
+      #
+      # Se lee del FUENTE y no de `Code.Typespec` a proposito: el AST de los
+      # typespec cambia entre versiones de Erlang, y un test de contrato que se
+      # rompe al actualizar el compilador teaches a ignorar el rojo. El
+      # contrato que nos importa es el texto que dialyzer va a leer.
+      fuente =
+        Arrea.Worker.__info__(:compile)[:source]
+        |> Keyword.get(:file, "lib/arrea/worker.ex")
+        |> File.read!()
+
+      spec =
+        fuente
+        |> String.split("\n")
+        |> Enum.find(&String.starts_with?(&1, "  @spec send_message"))
+
+      assert spec, "no encuentro el @spec de send_message/2 en el fuente"
+
+      assert spec =~ ":ok",
+             "el @spec ya no declara `:ok`: #{inspect(spec)}"
+
+      assert spec =~ ":error" and spec =~ ":worker_not_found",
+             "el @spec no declara `{:error, :worker_not_found}` (#{inspect(spec)}): " <>
+               "el contrato vuelve a mentir aunque el codigo no lo haga"
+    end
+  end
+
   describe "worker lifecycle" do
     test "processes single function task successfully" do
       parent = self()
