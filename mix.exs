@@ -22,7 +22,7 @@ defmodule Arrea.MixProject do
       batamanta: batamanta(),
       aliases: aliases(),
       test_coverage: [tool: ExCoveralls],
-      escript: [main_module: Arrea.CLI]
+      escript: [main_module: Arrea.CLI.Escript]
     ]
   end
 
@@ -137,7 +137,8 @@ defmodule Arrea.MixProject do
       {:apero, github: "Lorenzo-SF/apero", optional: true},
       # `override: true` because alaja's main branch still declares batamanta
       # from Hex; arrea's GitHub checkout is the one that gets built.
-      {:batamanta, github: "Lorenzo-SF/Batamanta", optional: true, runtime: false, override: true},
+      {:batamanta,
+       github: "Lorenzo-SF/Batamanta", optional: true, runtime: false, override: true},
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.3"},
       {:telemetry_metrics, "~> 1.1"},

@@ -31,7 +31,7 @@ defmodule Arrea.CLI.Verify do
 
   # Backwards-compatible bang variant that still halts on error.
   @doc false
-  @spec runtime_opts!(map() | keyword()) :: :ok | no_return()
+  @spec runtime_opts!(map() | keyword()) :: :ok | :error
   def runtime_opts!(runtime_opts) do
     case runtime_opts(runtime_opts) do
       :ok ->
@@ -39,7 +39,9 @@ defmodule Arrea.CLI.Verify do
 
       {:error, reason} ->
         IO.puts(:stderr, "Error: #{format_error(reason)}")
-        System.halt(1)
+        # Antes `System.halt(1)`, que es incapturable. Ahora devuelve `:error`
+        # y quien llama TIENE que propagarlo.
+        :error
     end
   end
 
