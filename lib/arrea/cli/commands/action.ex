@@ -20,12 +20,12 @@ defmodule Arrea.CLI.Commands.Action do
 
           {:error, error} ->
             IO.puts(:stderr, "Error: invalid JSON: #{error}")
-            System.halt(1)
+            :error
         end
 
       {:error, reason} ->
         IO.puts(:stderr, "Error: #{reason}")
-        System.halt(1)
+        :error
     end
   end
 
@@ -89,7 +89,7 @@ defmodule Arrea.CLI.Commands.Action do
 
   defp process_data(_data) do
     IO.puts(:stderr, "Error: expected a JSON object or object with 'actions' array")
-    System.halt(1)
+    :error
   end
 
   defp execute_action(action, verbose, quiet) do
