@@ -169,7 +169,9 @@ defmodule Arrea.BulkheadTest do
                  fn ->
                    send(parent, {:inside, Bulkhead.available(:w_used)})
                    :done
-                 end, weight: 3)
+                 end,
+                 weight: 3
+               )
 
       # 4 - 3 = 1 libre mientras el modelo esta cargado.
       assert_receive {:inside, 1}
@@ -194,7 +196,9 @@ defmodule Arrea.BulkheadTest do
         :w_metrics,
         fn ->
           send(parent, {:inside, Bulkhead.status(:w_metrics)})
-        end, weight: 3)
+        end,
+        weight: 3
+      )
 
       assert_receive {:inside, status}
       # Un modelo de "3" es UN titular, no tres.
@@ -215,7 +219,9 @@ defmodule Arrea.BulkheadTest do
               send(parent, :uno)
               Process.sleep(150)
               :ok
-            end, weight: 2)
+            end,
+            weight: 2
+          )
         end)
 
       receive do: (:uno -> :ok)
@@ -228,7 +234,9 @@ defmodule Arrea.BulkheadTest do
               send(parent, :dos)
               Process.sleep(150)
               :ok
-            end, weight: 2)
+            end,
+            weight: 2
+          )
         end)
 
       receive do: (:dos -> :ok)
