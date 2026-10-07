@@ -40,30 +40,32 @@ defmodule Arrea.Worker do
   alias Arrea.Telemetry.Events, as: TE
   alias Arrea.Telemetry.Metrics, as: TelemetryMetrics
   alias Arrea.Worker.ErrorPolicy
+  alias Arrea.Queue
 
-  @doc """
-  Inicia un worker con opciones configurables.
-
-  ## Opciones
-
-  - `:id` — Identificador único del worker (requerido)
-  - `:tasks` — Lista de funciones a ejecutar
-  - `:parent` — PID del proceso padre (Leader)
-  - `:log` — Habilitar logging (default: false)
-  - `:policy` — Política de manejo de errores. Si es `nil`, se usan los valores
-    de `Arrea.Config` (`:default_policy`, `:max_retries`, `:retry_delay`).
-  - `:telemetry` — Habilitar telemetría (default: false)
-
-  ## Examples
-
-      iex> Worker.start_link(id: :worker_1, tasks: [fn -> :ok end])
-      {:ok, pid}
-  """
-  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
     case Keyword.fetch(opts, :id) do
-      {:ok, id} -> GenServer.start_link(__MODULE__, opts, name: via_tuple(id))
-      :error -> {:error, "missing required option :id"}
+      {:ok, id} ->
+        opts =
+          case Keyword.fetch(opts, :queues) do
+            {:ok, _} -> Keyword.put(opts, :mode, :queues)
+            :error -> Keyword.put(opts, :mode, :tasks)
+          end
+
+        GenServer.start_link(__MODULE__, opts, name: via_tuple(id))
+
+      :error ->
+        {:error, "missing required option :id"}
+    end
+  end
+
+  @doc """
+  Stops a worker. Its queues keep whatever is still in them.
+  """
+  @spec stop(atom()) :: :ok | {:error, :not_found}
+  def stop(id) do
+    case GenServer.whereis(via_tuple(id)) do
+      nil -> {:error, :not_found}
+      pid -> GenServer.stop(pid, :normal)
     end
   end
 
@@ -149,6 +151,23 @@ defmodule Arrea.Worker do
 
     state = WorkerState.new(id, tasks, parent: parent, log: log?, policy: policy)
 
+    # Modo colas: sin lista propia. El presupuesto es lo que me permite tomar
+    # una tarea y lo que impide tomar una que no cabe.
+    state =
+      if Keyword.get(opts, :mode, :tasks) == :queues do
+        Process.send_after(self(), :poll, Keyword.get(opts, :poll_interval, 50))
+
+        %{
+          state
+          | mode: :queues,
+            queues: List.wrap(Keyword.fetch!(opts, :queues)),
+            budget: Keyword.get(opts, :budget, :infinity),
+            poll_interval: Keyword.get(opts, :poll_interval, 50)
+        }
+      else
+        state
+      end
+
     if use_telemetry, do: attach_telemetry(id)
 
     monitor_ok =
@@ -171,7 +190,11 @@ defmodule Arrea.Worker do
     notify_event(%{type: :worker_started, worker_id: id})
 
     if monitor_ok do
-      Process.send_after(self(), :execute_task, 0)
+      # Solo el modo lista arranca con una tarea pendiente. El modo colas ya se
+      # ha suscrito a su propio `:poll` mas arriba, y mandarle tambien un
+      # `:execute_task` lo mete por `handle_task_completed` con la lista vacia,
+      # que lo para. Por eso el estado que se mira es `mode`, no `tasks`.
+      if state.mode != :queues, do: Process.send_after(self(), :execute_task, 0)
       {:ok, state}
     else
       {:stop, {:error, :monitor_unavailable}, %{state | status: :error}}
@@ -196,6 +219,97 @@ defmodule Arrea.Worker do
         end
 
         notify_event(%{type: :message_invalid, worker_id: state.id, reason: reason})
+        {:noreply, state}
+    end
+  end
+
+  # ── el take por presupuesto ─────────────────────────────────────────────────
+
+  # De todas las colas que sirvo, la entrada de mayor prioridad que quepa en lo
+  # que me queda. Recorrerlas EN ORDEN y parar en la primera que tiene algo que
+  # me vale, en vez de mirar "la maxima prioridad global", es lo que permite
+  # que una cola de prioridad baja pero ligera no quede bloqueada para siempre
+  # detras de una pesada de otra cola.
+  # Una entrada de cola trae un payload opaco. Por convencion es una funcion
+  # de aridad cero, como las tareas de siempre; si no lo es, se cuenta como
+  # fallo de esa entrada y se sigue. Arrea NO mira dentro del payload mas alla
+  # de intentar ejecutarlo.
+  defp budget_left(%{budget: :infinity}), do: :infinity
+  defp budget_left(%{budget: budget}) when is_number(budget), do: budget
+
+  defp take_from_queues(state) do
+    available = budget_left(state)
+
+    state.queues
+    |> Enum.reduce(nil, fn queue, best ->
+      case Queue.peek(queue, available) do
+        {:ok, entry} ->
+          case best do
+            nil ->
+              {queue, entry}
+
+            {_queue, _entry} = candidate ->
+              if entry.priority > elem(candidate, 1).priority, do: {queue, entry}, else: candidate
+          end
+
+        {:error, _} ->
+          best
+      end
+    end)
+    |> case do
+      {queue, entry} ->
+        # Peek no quita. Puede que otro worker se haya adelantado.
+        case Queue.claim(queue, available) do
+          {:ok, claimed} ->
+            TE.emit_worker(:busy, %{}, %{worker_id: state.id})
+            send(claimed.from, {:arrea_queue, :claimed, queue, claimed})
+            {:ok, claimed}
+
+          {:error, _} ->
+            :nothing
+        end
+
+      nil ->
+        :nothing
+    end
+  end
+
+  # Una entrada de cola trae un payload opaco. Por convencion es una funcion
+  # de aridad cero, como las tareas de siempre; si no lo es, se cuenta como
+  # fallo de esa entrada y se sigue. Arrea NO mira dentro del payload mas alla
+  # de intentar ejecutarlo.
+  defp execute_queue_entry(%{payload: payload, from: from} = entry, state) do
+    case payload do
+      fun when is_function(fun, 0) ->
+        try do
+          fun.()
+        rescue
+          e ->
+            Logger.warning(
+              "[Worker #{inspect(state.id)}] La entrada de #{inspect(from)} fallo: #{inspect(e)}"
+            )
+        end
+
+      other ->
+        Logger.warning("[Worker #{inspect(state.id)}] Payload no ejecutable: #{inspect(other)}")
+    end
+
+    Process.send_after(self(), :poll, state.poll_interval)
+    {:noreply, %{state | status: :idle}}
+  end
+
+  @impl true
+  def handle_info(:poll, %{queues: _} = state) do
+    case take_from_queues(state) do
+      {:ok, entry} ->
+        # Trabajo tomado. Se devuelve el control a la cola del worker: lo
+        # EJECUTA, avisa a su padre, y cuando termine vuelve a preguntar. Un
+        # worker de colas no tiene lista propia, asi que no hay `tasks` que
+        # Consumir ni un `:execute_task` que disparar.
+        execute_queue_entry(entry, state)
+
+      :nothing ->
+        Process.send_after(self(), :poll, state.poll_interval)
         {:noreply, state}
     end
   end
@@ -277,7 +391,7 @@ defmodule Arrea.Worker do
       send(state.parent, {:worker_done, state.id, result})
     end
 
-    if result_state.tasks == [] do
+    if result_state.tasks == [] and result_state.mode != :queues do
       ended_at = System.monotonic_time(:millisecond)
 
       TE.emit_worker(:completed, %{}, %{

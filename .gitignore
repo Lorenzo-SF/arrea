@@ -56,4 +56,10 @@ Thumbs.db
 graphify-out/
 .specify/
 
-arrea
+# `/arrea` y no `arrea`. Sin la barra inicial git casa con cualquier fichero
+# **o directorio** llamado `arrea` a cualquier nivel, y los primeros que
+# encuentra son `lib/arrea/` y `test/arrea/`. Hoy estan versionados y no pasa
+# nada, pero en cuanto uno se borre y se vuelva a anadir, `git add` lo ignora
+# en silencio y el fichero se pierde. Es el mismo bug que ya se corrigio en el
+# `.gitignore` de candil.
+/arrea
