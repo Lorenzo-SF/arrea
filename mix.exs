@@ -130,13 +130,8 @@ defmodule Arrea.MixProject do
 
   defp deps do
     [
-      # Sibling deps point straight at GitHub: no version bumps to track, no
-      # publish ordering between packages. `MIX_ENV=prod mix hex.publish`
-      # still works if a Hex release is ever needed again.
       {:alaja, github: "Lorenzo-SF/alaja", override: true},
       {:apero, github: "Lorenzo-SF/apero", optional: true},
-      # `override: true` because alaja's main branch still declares batamanta
-      # from Hex; arrea's GitHub checkout is the one that gets built.
       {:batamanta,
        github: "Lorenzo-SF/Batamanta", optional: true, runtime: false, override: true},
       {:jason, "~> 1.4"},
