@@ -234,31 +234,9 @@ defmodule Arrea.Worker do
   # de aridad cero, como las tareas de siempre; si no lo es, se cuenta como
   # fallo de esa entrada y se sigue. Arrea NO mira dentro del payload mas alla
   # de intentar ejecutarlo.
-  defp execute_queue_entry(%{payload: payload, from: from} = entry, state) do
-    case payload do
-      fun when is_function(fun, 0) ->
-        try do
-          fun.()
-        rescue
-          e ->
-            Logger.warning(
-              "[Worker #{inspect(state.id)}] La entrada de #{inspect(from)} fallo: #{inspect(e)}"
-            )
-        end
+  defp budget_left(%{budget: :infinity}), do: :infinity
+  defp budget_left(%{budget: budget}) when is_number(budget), do: budget
 
-      other ->
-        Logger.warning("[Worker #{inspect(state.id)}] Payload no ejecutable: #{inspect(other)}")
-    end
-
-    Process.send_after(self(), :poll, state.poll_interval)
-    {:noreply, %{state | status: :idle}}
-  end
-
-  # De todas las colas que sirvo, la entrada de MAYOR PRIORIDAD que quepa en
-  # lo que me queda. Se comparan todas antes de coger ninguna, porque si se
-  # cogiera en orden de lista una tarea normal de la primera cola se llevaria
-  # por delante de un `:vip` de la ultima, y entonces la prioridad no significaria
-  # nada entre colas.
   defp take_from_queues(state) do
     available = budget_left(state)
 
@@ -319,36 +297,6 @@ defmodule Arrea.Worker do
     Process.send_after(self(), :poll, state.poll_interval)
     {:noreply, %{state | status: :idle}}
   end
-
-  defp take_from_queues(state) do
-    available = budget_left(state)
-
-    Enum.reduce_while(state.queues, :nothing, fn queue, _acc ->
-      case Queue.claim(queue, available) do
-        {:ok, entry} ->
-          TE.emit_worker(:busy, %{}, %{worker_id: state.id})
-
-          if state.log? do
-            Logger.debug(
-              "[Worker #{inspect(state.id)}] Took from #{inspect(queue)}, weight #{entry.weight}"
-            )
-          end
-
-          {:halt, {:ok, entry}}
-
-        {:error, reason} when reason in [:empty, :not_found] ->
-          {:cont, :nothing}
-
-        # Hay trabajo pero no cabe en lo que me queda: la siguiente cola puede
-        # que si. Un `no_fit` NO es un `empty` y no corta la busqueda.
-        {:error, :no_fit} ->
-          {:cont, :nothing}
-      end
-    end)
-  end
-
-  defp budget_left(%{budget: :infinity}), do: :infinity
-  defp budget_left(%{budget: budget}) when is_number(budget), do: budget
 
   @impl true
   def handle_info(:poll, %{queues: _} = state) do
