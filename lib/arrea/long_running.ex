@@ -190,6 +190,13 @@ defmodule Arrea.LongRunning do
 
     true = Process.link(port)
 
+    # Sin esto, `terminate/2` no llega a llamarse NUNCA: un GenServer solo
+    # ejecuta `terminate/2` si atrapa salidas, y este no las atrapaba. Con
+    # `trap_exit` el `{:EXIT, port, reason}` del puerto llega como mensaje —que
+    # es justo lo que las clausulas de `handle_info/2` de mas abajo ya
+    # esperaban— en vez de matar al proceso sin limpiar nada.
+    Process.flag(:trap_exit, true)
+
     state = %{
       id: id,
       binary: binary,
@@ -260,7 +267,45 @@ defmodule Arrea.LongRunning do
   @impl true
   def terminate(_reason, state) do
     unregister(state.id)
+    stop_os_process(state)
     :ok
+  end
+
+  # Cerrar el puerto NO mata al proceso. Un `Port.open({:spawn_executable,
+  # _})` deja al binario como hijo de la maquina, y al cerrarlo solo se cierra
+  # el descriptor: el proceso se queda huerfano, reparteado a init, y sigue
+  # corriendo con lo que tenga cogido —una GPU entera, un puerto— sin que nadie
+  # pueda pararlo.
+  #
+  # Comprobado con un `sleep 600` de mentira: `LongRunning.stop/1` devolvia
+  # `:ok` y el `kill -0` de su pid seguia respondiendo.
+  defp stop_os_process(%{port: nil}), do: :ok
+
+  defp stop_os_process(%{port: port}) do
+    _ = signal(port, "-TERM")
+
+    # Un TERM se ignora. Un KILL no, y para un proceso que se supone parado
+    # "casi parado" no es una opcion.
+    Process.sleep(50)
+    _ = signal(port, "-KILL")
+
+    # `Port.close/1` es lo que libera el descriptor de la maquina virtual. Sin
+    # el, el puerto sigue abierto aunque el proceso ya este muerto.
+    Port.close(port)
+    :ok
+  catch
+    _kind, _reason -> :ok
+  end
+
+  defp signal(port, sig) do
+    case :erlang.port_info(port, :os_pid) do
+      {:os_pid, os_pid} ->
+        System.cmd("kill", [sig, Integer.to_string(os_pid)], stderr_to_stdout: true)
+        :ok
+
+      _ ->
+        :ok
+    end
   end
 
   @impl true

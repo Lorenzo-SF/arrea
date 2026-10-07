@@ -22,7 +22,7 @@ defmodule Arrea.MixProject do
       batamanta: batamanta(),
       aliases: aliases(),
       test_coverage: [tool: ExCoveralls],
-      escript: [main_module: Arrea.CLI]
+      escript: [main_module: Arrea.CLI.Escript]
     ]
   end
 
@@ -52,16 +52,24 @@ defmodule Arrea.MixProject do
       main: "readme",
       source_url: "https://github.com/Lorenzo-SF/arrea",
       homepage_url: "https://github.com/Lorenzo-SF/arrea",
+      source_ref: "3.0.0",
       extras: ["README.md", "docs/README_ES.md", "LICENSE.md"],
       groups_for_modules: [
         "Core API": [Arrea, Arrea.Config, Arrea.Error, Arrea.Result],
         "OTP Core": [
           Arrea.Leader,
+          Arrea.Leader.CommandRunner,
           Arrea.Worker,
           Arrea.WorkerState,
+          Arrea.Worker.ErrorPolicy,
+          Arrea.Worker.Registry,
+          Arrea.Worker.ResultHandler,
+          Arrea.Worker.Scheduler,
           Arrea.Supervisor,
           Arrea.Monitor,
-          Arrea.Parallel
+          Arrea.Parallel,
+          Arrea.LongRunning,
+          Arrea.Registry
         ],
         "Fault Tolerance": [
           Arrea.CircuitBreaker,
@@ -82,13 +90,17 @@ defmodule Arrea.MixProject do
           Arrea.Telemetry,
           Arrea.Telemetry.Events,
           Arrea.Telemetry.Metrics,
+          Arrea.Telemetry.CommunicationMetrics,
           Arrea.Telemetry.DebugHandler
         ],
-        CLI: [Arrea.CLI, Arrea.CLI.Definition],
+        CLI: [Arrea.CLI, Arrea.CLI.Definition, Arrea.CLI.Verify],
         "CLI Commands": [
           Arrea.CLI.Commands.Action,
           Arrea.CLI.Commands.Config,
-          Arrea.CLI.Commands.Run
+          Arrea.CLI.Commands.Nodes,
+          Arrea.CLI.Commands.Run,
+          Arrea.CLI.Commands.Run.Execution,
+          Arrea.CLI.Commands.Run.Format
         ],
         Utilities: [Arrea.Subscribers, Arrea.Logging.Behaviour, Arrea.Application]
       ]
@@ -100,15 +112,28 @@ defmodule Arrea.MixProject do
       format: :escript,
       execution_mode: :cli,
       compression: 19,
-      binary_name: "Arrea"
+      binary_name: "Arrea",
+      # BEAM-keeps-alive. The wrapper dispatches to a warm Erlang VM over a
+      # Unix-domain socket instead of booting one per invocation. The socket
+      # is namespaced by (app, version, target), so this daemon is Arrea's
+      # own — it is not shared with the other packaged CLIs.
+      #   ARREA_BEAM_ALIVE=<ms>  override the TTL for one shell (max 86_400_000)
+      #   ARREA_BEAM_ALIVE=0     force the legacy cold-start path
+      daemon: [
+        enabled: true,
+        var: "ARREA_BEAM_ALIVE",
+        default_ms: 300_000,
+        request_timeout_ms: 60_000
+      ]
     ]
   end
 
   defp deps do
     [
-      {:alaja, git: "https://github.com/Lorenzo-SF/alaja.git", override: true},
-      {:apero, git: "https://github.com/Lorenzo-SF/apero.git", optional: true},
-      {:batamanta, "~> 3.0.0", optional: true, runtime: false, override: true},
+      {:alaja, github: "Lorenzo-SF/alaja", override: true},
+      {:apero, github: "Lorenzo-SF/apero", optional: true},
+      {:batamanta,
+       github: "Lorenzo-SF/Batamanta", optional: true, runtime: false, override: true},
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.3"},
       {:telemetry_metrics, "~> 1.1"},
@@ -126,7 +151,7 @@ defmodule Arrea.MixProject do
     [
       gen: ["deps.get", "compile", "batamanta", "install"],
       install: fn _ ->
-        dest_dir = Path.expand("~/bin")
+        dest_dir = Path.expand("~/.local/bin")
         File.mkdir_p!(dest_dir)
         config = Mix.Project.config()
         app_name = Atom.to_string(config[:app])

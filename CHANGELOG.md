@@ -9,13 +9,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`arrea run --comand "x"` no longer crashes with a cryptic
+  `Protocol.UndefinedError protocol Enumerable not implemented for
+  Atom. Got value: nil`**. The DSL now rejects unknown `--xxx`
+  flags with a clear error message (e.g.
+  `Error: unknown flag '--comand'` plus
+  `Did you mean? --command`). The flag typo used to be silently
+  dropped as a positional argument, which left `:command` unset,
+  which crashed deep inside `Run.execute_with_opts/2` when
+  `validate_commands!/1` called `Enum.with_index(nil)`. The
+  validation gate lives in `Alaja.CLI.Definition.parse_flags/3`
+  (host-agnostic — every consumer of the DSL benefits from it).
+- **`arrea run` (no flags) exits with a clear missing-required
+  error** instead of crashing on nil. `flag(:command, ...,
+  required: true)` in the DSL is now enforced by the framework's
+  `find_missing_required/2`. Runners see
+  `Error: missing required flags: --command` before the handler
+  ever runs.
+- **`arrea run --command "echo a"` (single command, not repeated)
+  no longer crashes**. The `repeatable: true` flag now normalises
+  its value to a list downstream (`normalise_commands/1`) so the
+  validator and executor never see a bare binary where they
+  expected a list.
+- **`batamanta` dependency bumped from `~> 2.0.0` to `~> 3.0`** so
+  arrea picks up the 3.x line of the build tool that ships the
+  new `:release` format (was `:escript`).
 - `arrea --help` (and `arrea`, `arrea -h`, `arrea help`) now renders the
   Arrea command summary with the Arrea banner, instead of Alaja's full
   command reference. Same goes for `arrea --version`, which now reports
   the arrea version (e.g. `arrea 3.0.0`) instead of `alaja 3.0.0`.
   Fix lives in `Alaja.CLI.Definition` (commit d43b18f in alaja main).
 
-## [3.0.0] - 2026-08-07
+### Added
+
+- **`Arrea.CLI.Commands.Run.normalise_commands/1`** and
+  **`Arrea.CLI.Commands.Run.validate_commands!/1`** are now
+  `@doc false` public on the module surface so the test suite can
+  pin the contracts without spinning up the full executor.
+- **`test/arrea/cli/dispatch_test.exs`** — end-to-end tests that
+  drive `Arrea.CLI.Definition.dispatch_main/1` against the DSL,
+  locking in the unknown-flag rejection and required-flag
+  enforcement at the runner level (not just the alaja level).
+
+## [3.0.0] - 2026-09-18
 
 ### Added
 - **`Arrea.Bulkhead`** — concurrency limiter (AR-2). Caps the number of
@@ -74,12 +110,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Dialyzer passes clean (0 errors) across the whole codebase.
   - `mix credo --strict` passes with 0 issues.
 
+### Fixed
+- `arrea --help` (and `arrea`, `arrea -h`, `arrea help`) now renders the
+  Arrea command summary with the Arrea banner, instead of Alaja's full
+  command reference. Same goes for `arrea --version`, which now reports
+  the arrea version (e.g. `arrea 3.0.0`) instead of `alaja 3.0.0`.
+  Requires `alaja ~> 3.1` (host-aware help, `Alaja.CLI.Definition`).
+
 ### Known issues
 - `test/arrea/cli_test.exs` — two pre-existing tests are tagged
   `:wip_cli`. They rely on the `alaja` CLI help being rendered to
-  stderr in the test environment, which the `alaja` SDK does not
-  currently do. Tracked separately; the fix lives in the `alaja`
-  repository, not here.
+  stderr in the test environment. Fixed upstream in alaja 3.1.2;
+  drop the tags once the `alaja ~> 3.1` dep is verified in CI.
 
 ## [2.1.0] - 2026-07-07
 
@@ -237,9 +279,12 @@ maintained and have been collapsed into this single canonical entry.
 - Initial open source release: parallel execution, workers, leader,
   monitor, circuit breaker, telemetry, CLI.
 
+[3.0.0]: https://hex.pm/packages/arrea/3.0.0
+[2.2.0]: https://hex.pm/packages/arrea/2.2.0
 [2.1.0]: https://hex.pm/packages/arrea/2.1.0
+[2.0.0]: https://hex.pm/packages/arrea/2.0.0
 [1.0.0]: https://hex.pm/packages/arrea/1.0.0
-[2.0.0]: https://github.com/Lorenzo-SF/arrea/releases/tag/v2.0.0
+[Unreleased]: https://github.com/Lorenzo-SF/arrea/compare/3.0.0...HEAD
 
 
 > ## A note on history
@@ -254,18 +299,18 @@ maintained and have been collapsed into this single canonical entry.
 > not preserved is, by the maintainer's choice, no longer part of the
 > canonical development line.
 >
-> Tag `1.0.0` points to the initial open-source cut-over; tag
-> `2.0.0` points to the current HEAD and the canonical consolidated
-> release. All versioned artifacts on Hex.pm and GitHub Releases
+> Tag `1.0.0` points to the initial open-source cut-over; tags
+> `2.0.0`, `2.1.0`, `2.2.0` and `3.0.0` point to their respective
+> releases. All versioned artifacts on Hex.pm and GitHub Releases
 > follow this convention.
 
 
 > ## A note on versioning
 >
-> The canonical tags are `1.0.0` (initial open-source cut-over) and
-> `2.0.0` (current HEAD). No other tags exist: any `v0.X.Y` tags
-> previously seen on remote were internal dev tags pinned to early
-> `alaja` versions and have been deleted. `mix.exs` `version`
-> reflects the current development state and may be ahead of the
-> public surface. Pin to `1.0.0` or `2.0.0` for stable dependencies;
-> new tags will appear here once a release ships.
+> The canonical tags are `1.0.0` (initial open-source cut-over),
+> `2.0.0`, `2.1.0`, `2.2.0` and `3.0.0` (current HEAD). No other tags
+> exist: any `v0.X.Y` tags previously seen on remote were internal
+> dev tags pinned to early `alaja` versions and have been deleted.
+> `mix.exs` `version` reflects the current development state and may
+> be ahead of the public surface. Pin to a released tag for stable
+> dependencies; new tags will appear here once a release ships.

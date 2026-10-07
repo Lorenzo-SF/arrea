@@ -81,10 +81,40 @@ defmodule Arrea.Worker do
 
       iex> Worker.send_message(:worker_1, {:send_to_worker, :worker_2, %{type: :data, value: 1}})
       :ok
+
+      iex> Worker.send_message(:no_existe, %{type: :ping})
+      {:error, :worker_not_found}
   """
-  @spec send_message(atom(), term()) :: :ok
+  # Antes esto decia `@spec send_message(atom(), term()) :: :ok` y devolvia
+  # `:ok` SIEMPRE. `GenServer.cast/2` devuelve `:ok` pase lo que pase, y el
+  # `via_tuple` es un `{:via, Registry, {Arrea.Registry, id}}`: si el worker no
+  # existe, el via no resuelve y el cast es un no-op silencioso.
+  #
+  # Medido, no supuesto:
+  #
+  #     iex> Worker.send_message(:worker_1, %{type: :ping})
+  #     :ok
+  #
+  #     iex> Worker.send_message(:NUNCA_EXISTIO, %{type: :ping})
+  #     :ok
+  #
+  # Un sistema de mensajes que dice que entrego lo que no entrego es peor que
+  # no tener mensajes: quien llama cree que el otro agente lo sabe, y no hay
+  # forma de saber que no. Y el `@spec` decia `:ok`, asi que dialyzer
+  # confirmaba la mentira. No era un contrato optimista: era un contrato
+  # equivocado escrito justo donde dialyzer lo lee.
+  #
+  # Lo que SIGUE sin haber: acuse de recibo. `:ok` aqui significa "el cast se
+  # encolo en un worker vivo", no "el worker lo proceso". Una llamada con
+  # respuesta es otra operacion, y por eso no se ha convertido esta en un
+  # `call`: el que manda un aviso no deberia bloquear esperando un acuse que
+  # nadie pidio.
+  @spec send_message(atom(), term()) :: :ok | {:error, :worker_not_found}
   def send_message(worker_id, message) do
-    GenServer.cast(via_tuple(worker_id), {:message, message})
+    case Registry.lookup(Arrea.Registry, worker_id) do
+      [] -> {:error, :worker_not_found}
+      [{pid, _}] -> GenServer.cast(pid, {:message, message})
+    end
   end
 
   @doc """

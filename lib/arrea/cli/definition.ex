@@ -2,11 +2,38 @@ defmodule Arrea.CLI.Definition do
   @moduledoc """
   CLI command definitions and DSL for Arrea.
   """
-  use Alaja.CLI.Definition, otp_app: :arrea
+  # `halt_on_error` esta deliberadamente DESACTIVADO, aunque Alaja lo active por
+  # defecto, y aunque `arrea` sea un escript.
+  #
+  # El DSL lo convierte en un `System.halt/1`, que es INCAPTURABLE: se lleva por
+  # delante la VM de quien este usando la libreria, no solo la del binario. Arrea
+  # es las dos cosas a la vez —escript y libreria—, y con esto estaba la primera.
+  #
+  # Se ve sin medir mucho: `mix test` MUERTA a mitad de la ejecucion, sin
+  # imprimir el resumen. El culpable es `test/arrea/cli/commands/run_test.exs`,
+  # que intenta `catch :exit, _ -> :halted` y no puede, porque un halt no se
+  # puede atrapar. Es decir: **el suite no decia cuantos tests habia corrido, y
+  # por eso los "314 tests" de la documentacion salieron de contarlos, no de
+  # ejecutarlos.**
+  #
+  # Por lo tanto el codigo de salida lo pone `Arrea.CLI.main/1`, que es la
+  # unica frontera que puede morir: es el `main_module` del escript y ahi es
+  # correcto. Un host que embeba Arrea llama a `Definition.main/1`, que
+  # devuelve un valor y no mata la VM de nadie.
+  #
+  # `catch_all` porque sin el, el `ErrorHandler` de Alaja imprime el error y
+  # devuelve `:ok`: `arrea frobnicate` saldria con **0**, que es el mismo fallo
+  # invisible para un script que un exit code.
+  use Alaja.CLI.Definition,
+    otp_app: :arrea,
+    halt_on_error: false,
+    usage_exit_code: 1,
+    catch_all: {Arrea.CLI, :unknown}
 
   alias Arrea.CLI.Commands.Action
   alias Arrea.CLI.Commands.Config
   alias Arrea.CLI.Commands.Run
+  alias Alaja.Output
   alias Arrea.CLI.Verify
 
   @doc false
@@ -17,15 +44,19 @@ defmodule Arrea.CLI.Definition do
       # Build runtime_opts from asdf/mise flags
       runtime_opts = build_runtime_opts(opts)
 
-      # Validate runtime opts if any were provided
-      if runtime_opts != [] do
-        Verify.runtime_opts!(runtime_opts)
+      # Validar los runtime opts. Esto era un `if` cuyo resultado se ignoraba;
+      # con `System.halt(1)` dentro no se notaba porque la VM se moria ahi. Sin
+      # el halt, este codigo imprimiria el error y SEGUIDA ejecutando: un fallo
+      # que se ve y no para nada. Por eso el `with`, y no un `if`.
+      with :ok <- validate_runtime_opts(runtime_opts) do
+        Run.execute_with_opts(opts, runtime_opts)
       end
-
-      # Execute with the extracted runtime opts
-      Run.execute_with_opts(opts, runtime_opts)
     end
   end
+
+  # Sin runtime opts no hay nada que validar, y `[]` es `:ok`, no `:error`.
+  defp validate_runtime_opts([]), do: :ok
+  defp validate_runtime_opts(runtime_opts), do: Verify.runtime_opts!(runtime_opts)
 
   @doc false
   def config_handler(%{_args: _args} = opts) do
@@ -101,7 +132,7 @@ defmodule Arrea.CLI.Definition do
   # ── run ─────────────────────────────────────────────────────────────────────
 
   command "run", "Execute shell commands in parallel with progress tracking" do
-    flag(:command, :string, repeatable: true)
+    flag(:command, :string, repeatable: true, required: true)
     flag(:parallel, :integer, default: 4)
     flag(:timeout, :integer, default: 30_000)
     flag(:quiet, :boolean, short: :q)
@@ -158,5 +189,26 @@ defmodule Arrea.CLI.Definition do
 
   command "nodes", "Show registered dynamic workers" do
     run({Arrea.CLI.Commands.Nodes, :execute})
+  end
+
+  @doc """
+  Un comando que no existe. Lo responde Arrea y no el framework, porque puede
+  sugerir el mas cercano y porque el codigo de salida depende de el.
+  """
+  def unknown(%{name: name}) do
+    Output.write_error("unknown command: #{name}")
+    Output.write_raw_error("los comandos son: " <> Enum.join(command_names(), ", ") <> "\n")
+    :error
+  end
+
+  @doc """
+  Los nombres de todos los comandos declarados, para que el mensaje de arriba no
+  sea una lista escrita a mano que se queda vieja.
+  """
+  @spec command_names() :: [String.t()]
+  def command_names do
+    __commands__()
+    |> Enum.map(& &1.name)
+    |> Enum.sort()
   end
 end
