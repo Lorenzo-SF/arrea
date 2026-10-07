@@ -33,6 +33,14 @@ defmodule Arrea.Bulkhead do
   Metadata is typed (`Arrea.Telemetry.Events.bulkhead_metadata/0`):
   `%{name: atom(), max_concurrent: pos_integer(), active: non_neg_integer()}`.
 
+  ## Weighted
+
+  Internally the limit is a `capacity` and a `used` sum, not a count of slots.
+  With the default weight of 1 the two are the same number, so `active` is kept
+  as a separate counter: it is what the metrics mean by "occupied", and folding
+  it into `used` would turn a weighted bulkhead into one that reports four
+  holders when it holds one 4 GB model.
+
   ## Registry
 
   Each bulkhead is registered through `Registry` with a unique name under
@@ -89,15 +97,44 @@ defmodule Arrea.Bulkhead do
   """
   @spec run(atom(), (-> term())) ::
           {:ok, term()} | {:error, :bulkhead_full | :bulkhead_not_found | :execution_failed}
-  def run(name, fun) when is_atom(name) and is_function(fun, 0) do
-    case safe_call(name, :acquire) do
+  def run(name, fun), do: run(name, fun, [])
+
+  @doc """
+  Runs a function, occupying `:weight` units of the bulkhead.
+
+  The weight is what makes this useful for things that are not "one of N
+  concurrent". A GPU is not a count of slots, it is a number of bytes: a 12 GB
+  model and a 1.8 GB embedder cannot both live in 16 GB, but "one slot each"
+  says they can.
+
+  ## The default is 1, and that is not a special case
+
+  A bulkhead of 4 slots where everything weighs 1 IS a weighted bulkhead whose
+  weights are all 1. So the general form and the old form are the same function:
+
+      Bulkhead.run(:api, fn -> ... end)                    # weighs 1
+      Bulkhead.run(:gpu, fn -> ... end, weight: 12_400_000_000)
+
+  ## What it does NOT do
+
+  It does not queue. It rejects, exactly as before, and the caller decides what
+  to do about that. A resource that waits is a different thing with different
+  semantics, and putting a queue inside here would make this unusable as a
+  bulkhead at all.
+  """
+  @spec run(atom(), (-> term()), keyword()) ::
+          {:ok, term()} | {:error, :bulkhead_full | :bulkhead_not_found | :execution_failed}
+  def run(name, fun, opts) when is_atom(name) and is_function(fun, 0) do
+    weight = Keyword.get(opts, :weight, 1)
+
+    case safe_call(name, {:acquire, weight}) do
       :ok ->
         try do
           {:ok, fun.()}
         rescue
           _exception -> {:error, :execution_failed}
         after
-          GenServer.cast(via_tuple(name), :release)
+          GenServer.cast(via_tuple(name), {:release, weight})
         end
 
       :full ->
@@ -169,6 +206,11 @@ defmodule Arrea.Bulkhead do
          %{
            name: Keyword.fetch!(opts, :name),
            max_concurrent: Keyword.fetch!(opts, :max_concurrent),
+           # `capacity`/`used` son lo que decide si cabe. `active` cuenta los
+           # titulares, que es lo que dicen las metricas: un bulkhead con un
+           # modelo de 4 GB ocupa "uno", no "cuatro".
+           capacity: Keyword.fetch!(opts, :max_concurrent),
+           used: 0,
            active: 0,
            accepted: 0,
            rejected: 0
@@ -180,9 +222,15 @@ defmodule Arrea.Bulkhead do
   end
 
   @impl true
-  def handle_call(:acquire, _from, state) do
-    if state.active < state.max_concurrent do
-      new_state = %{state | active: state.active + 1, accepted: state.accepted + 1}
+  def handle_call({:acquire, weight}, _from, state) do
+    if state.used + weight <= state.capacity do
+      new_state = %{
+        state
+        | used: state.used + weight,
+          active: state.active + 1,
+          accepted: state.accepted + 1
+      }
+
       TE.emit_bulkhead(:acquired, metadata(new_state))
       {:reply, :ok, new_state}
     else
@@ -194,7 +242,7 @@ defmodule Arrea.Bulkhead do
 
   @impl true
   def handle_call(:available, _from, state) do
-    {:reply, {:available, state.max_concurrent - state.active}, state}
+    {:reply, {:available, state.capacity - state.used}, state}
   end
 
   @impl true
@@ -203,8 +251,13 @@ defmodule Arrea.Bulkhead do
   end
 
   @impl true
-  def handle_cast(:release, state) do
-    new_state = %{state | active: max(0, state.active - 1)}
+  def handle_cast({:release, weight}, state) do
+    new_state = %{
+      state
+      | used: max(0, state.used - weight),
+        active: max(0, state.active - 1)
+    }
+
     TE.emit_bulkhead(:released, metadata(new_state))
     {:noreply, new_state}
   end
@@ -251,7 +304,10 @@ defmodule Arrea.Bulkhead do
       max_concurrent: state.max_concurrent,
       active: state.active,
       accepted: state.accepted,
-      rejected: state.rejected
+      rejected: state.rejected,
+      # Nuevo: cuanto queda, en las mismas unidades que `max_concurrent`.
+      # Con peso 1, `available` y `max_concurrent - active` coinciden.
+      available: state.capacity - state.used
     }
   end
 end

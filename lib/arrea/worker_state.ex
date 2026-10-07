@@ -58,7 +58,11 @@ defmodule Arrea.WorkerState do
             results: [],
             policy: nil,
             retry_count: 0,
-            warnings: []
+            warnings: [],
+            queues: [],
+            budget: :infinity,
+            poll_interval: 50,
+            mode: :tasks
 
   @doc """
   Creates a new worker state.

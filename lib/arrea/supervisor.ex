@@ -18,6 +18,9 @@ defmodule Arrea.Supervisor do
 
   Con `:rest_for_one`:
   - Si falla un **Registry** → reinicia todo (raro; los registries son muy estables)
+  - Si falla `Arrea.Queue.Registry` → tambien reinicia todo, y con el las colas
+    pendientes. Es el unico caso en el que se pierden entradas, y por eso esta
+    ANOTADO aqui en vez de ser una sorpresa
   - Si falla **Monitor** → reinicia Monitor + Leader + WorkerSupervisor (batches activos se pierden)
   - Si falla **Leader** → reinicia solo Leader + WorkerSupervisor (Monitor y registries intactos)
   - Si falla **WorkerSupervisor** → reinicia solo WorkerSupervisor (impacto mínimo)
@@ -34,6 +37,10 @@ defmodule Arrea.Supervisor do
   def init(_opts) do
     children = [
       {Registry, keys: :unique, name: Arrea.Registry},
+      # Las colas se registran en el suyo, y NINGUN registro mas las referencia:
+      # se crean y se destruyen solas. Por eso va el primero: un registro que
+      # muere por debajo arrastraria a las colas con el.
+      {Registry, keys: :unique, name: Arrea.Queue.Registry},
       {Registry, keys: :unique, name: Arrea.CircuitBreaker.Registry},
       {Registry, keys: :unique, name: Arrea.Bulkhead.Registry},
       {Registry, keys: :unique, name: Arrea.RateLimiter.Registry},
