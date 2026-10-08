@@ -29,7 +29,7 @@ defmodule Arrea.CLIDispatchTest do
   # `Arrea.CLI.Definition`.
   defp dispatch(args) do
     capture_stderr_during(fn ->
-      Arrea.CLI.Definition.dispatch_main(args)
+      Arrea.CLI.Definition.main(args)
     end)
   end
 
@@ -71,7 +71,7 @@ defmodule Arrea.CLIDispatchTest do
       # `nodes` has no required flags and no arguments — this just
       # confirms the dispatcher's basic flow doesn't break on a
       # command with no flags.
-      capture = capture_stderr_during(fn -> Arrea.CLI.Definition.dispatch_main(["nodes"]) end)
+      capture = capture_stderr_during(fn -> Arrea.CLI.Definition.main(["nodes"]) end)
 
       # Either we got :ok or a graceful "no registered nodes" message,
       # but we did NOT get "unknown flag" or "missing required flags".

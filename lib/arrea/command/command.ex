@@ -266,9 +266,10 @@ defmodule Arrea.Command do
       ...>   fn msg -> IO.inspect(msg) end)
       {:ok, 0}
   """
-  @spec execute_stream(String.t(), (({:stdout | :stderr, binary()} -> any())) ::
-                                     any(),
-          keyword()) :: {:ok, non_neg_integer()} | {:error, term()}
+  @type stream_callback :: (any() -> any())
+
+  @spec execute_stream(String.t(), stream_callback(), keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
   def execute_stream(cmd, callback, opts \\ []) when is_function(callback, 1) do
     with :ok <- maybe_validate(cmd, opts) do
       shell = resolve_shell(opts)
@@ -277,48 +278,89 @@ defmodule Arrea.Command do
       env = build_env(opts)
       full_cmd = build_full_command(cmd, opts)
 
+      # OTP 28 stopped forwarding {:exit_status, code} for
+      # {:spawn_executable, _} ports to the owning process, which
+      # left the old port-drain code path hanging on this release.
+      # Wrap the user command in a one-liner that appends the
+      # exit code as a sentinel line on the stream, recover it
+      # from the same data channel the port already delivers, and
+      # strip the sentinel from the lines the callback sees.
+      wrapper = "__ARREA_EXIT_#{System.unique_integer([:positive])}__"
+      wrapped_cmd = "(#{full_cmd}); echo \"#{wrapper}:$?\""
+
       port =
         Port.open(
           {:spawn_executable, shell},
           [
-            {:args, ["-c", full_cmd]},
+            {:args, ["-c", wrapped_cmd]},
             {:cd, cd},
-            {:env, env},
-            {:stderr_to_stdout, false},
+            {:env,
+             Enum.map(env, fn {k, v} -> {String.to_charlist(k), String.to_charlist(v)} end)},
             {:line, 4096}
           ]
         )
 
-      # Drain port messages until exit_status.
-      drain_port(port, callback)
-      exit_code = wait_exit(port, timeout)
-      Port.close(port)
+      port_ref = Port.monitor(port)
+
+      deadline = System.monotonic_time(:millisecond) + timeout + 30_000
+      exit_code = drain_stream(port, port_ref, callback, wrapper, deadline)
+
+      try do
+        Port.close(port)
+      rescue
+        ArgumentError -> :ok
+      end
+
       {:ok, exit_code}
     end
   rescue
     e -> {:error, Exception.message(e)}
   end
 
-  # Private: receive all pending messages from port and dispatch.
-  defp drain_port(port, callback) do
-    receive do
-      {^port, {:data, line}} ->
-        callback.({:stdout, line})
-        drain_port(port, callback)
+  # Drains the port until the sentinel line arrives, the port
+  # closes, or the deadline elapses. Returns the captured exit
+  # code, defaulting to 124 (timeout convention) on hard timeout.
+  defp drain_stream(port, port_ref, callback, wrapper, deadline) do
+    do_drain(port, port_ref, callback, wrapper, deadline, nil)
+  end
 
-      {^port, {:exit_status, _code}} ->
-        :ok
+  defp do_drain(port, port_ref, callback, wrapper, deadline, acc) do
+    remaining = max(deadline - System.monotonic_time(:millisecond), 0)
+
+    receive do
+      {^port, {:data, {:eol, line}}} ->
+        handle_line(line, port, port_ref, callback, wrapper, deadline, acc)
+
+      {^port, {:data, {:noeol, line}}} ->
+        handle_line(line, port, port_ref, callback, wrapper, deadline, acc)
+
+      {^port, {:data, line}} ->
+        handle_line(line, port, port_ref, callback, wrapper, deadline, acc)
+
+      {:DOWN, ^port_ref, :port, ^port, _reason} ->
+        acc || 0
+
+      {:DOWN, ^port_ref, :port, ^port, {:exit_status, code}} ->
+        code
     after
-      0 -> :ok
+      remaining ->
+        124
     end
   end
 
-  # Private: wait for port exit or timeout.
-  defp wait_exit(port, timeout) do
-    receive do
-      {^port, {:exit_status, code}} -> code
-    after
-      timeout -> 124
+  defp handle_line(line, port, port_ref, callback, wrapper, deadline, acc) do
+    text = to_string(line)
+
+    case String.split(text, ":", parts: 2) do
+      [prefix, code_str] when prefix == wrapper ->
+        case Integer.parse(String.trim(code_str)) do
+          {code, _} -> code
+          :error -> acc || 0
+        end
+
+      _ ->
+        callback.({:stdout, line})
+        do_drain(port, port_ref, callback, wrapper, deadline, acc)
     end
   end
 

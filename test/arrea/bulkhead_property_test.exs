@@ -109,6 +109,8 @@ defmodule Arrea.BulkheadPropertyTest do
       fn _ ->
         %{
           name: test_id,
+          capacity: max,
+          used: 0,
           max_concurrent: max,
           active: 0,
           accepted: 0,

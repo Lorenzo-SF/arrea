@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.1.0] - 2026-10-07
 
 ### Fixed
 
@@ -50,6 +50,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   drive `Arrea.CLI.Definition.dispatch_main/1` against the DSL,
   locking in the unknown-flag rejection and required-flag
   enforcement at the runner level (not just the alaja level).
+- **`Arrea.Bulkhead.run/3` with `weight:`** — the bulkhead is now
+  weight-aware. A bulkhead of 4 with everything weighing 1 is the
+  same as the old behaviour; `weight: 12_400_000_000` (e.g. bytes
+  of VRAM a model takes) makes the limit `capacity / used` instead
+  of counting holders. The `active` counter stays separate so
+  metrics keep reporting "one model occupies one slot". Backward
+  compatible: `run/2` defaults to `weight: 1`. (`feat(bulkhead)`,
+  PR #22, includes 42 tests for queue / worker-servidor / worker /
+  bulkhead.)
 
 ## [3.0.0] - 2026-09-18
 
@@ -284,7 +293,8 @@ maintained and have been collapsed into this single canonical entry.
 [2.1.0]: https://hex.pm/packages/arrea/2.1.0
 [2.0.0]: https://hex.pm/packages/arrea/2.0.0
 [1.0.0]: https://hex.pm/packages/arrea/1.0.0
-[Unreleased]: https://github.com/Lorenzo-SF/arrea/compare/3.0.0...HEAD
+[Unreleased]: https://github.com/Lorenzo-SF/arrea/compare/3.1.0...HEAD
+[3.1.0]: https://github.com/Lorenzo-SF/arrea/compare/3.0.0...3.1.0
 
 
 > ## A note on history
