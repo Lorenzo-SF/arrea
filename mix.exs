@@ -130,10 +130,9 @@ defmodule Arrea.MixProject do
 
   defp deps do
     [
-      {:alaja, github: "Lorenzo-SF/alaja", override: true},
-      {:apero, github: "Lorenzo-SF/apero", optional: true},
-      {:batamanta,
-       github: "Lorenzo-SF/Batamanta", optional: true, runtime: false, override: true},
+      {:alaja, "~> 3.2"},
+      {:apero, "~> 4.0", optional: true},
+      {:batamanta, "~> 3.1", optional: true, runtime: false},
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.3"},
       {:telemetry_metrics, "~> 1.1"},

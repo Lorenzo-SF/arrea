@@ -257,7 +257,7 @@ defmodule Arrea.Worker do
       end
     end)
     |> case do
-      {queue, entry} ->
+      {queue, _entry} ->
         # Peek no quita. Puede que otro worker se haya adelantado.
         case Queue.claim(queue, available) do
           {:ok, claimed} ->
@@ -278,7 +278,7 @@ defmodule Arrea.Worker do
   # de aridad cero, como las tareas de siempre; si no lo es, se cuenta como
   # fallo de esa entrada y se sigue. Arrea NO mira dentro del payload mas alla
   # de intentar ejecutarlo.
-  defp execute_queue_entry(%{payload: payload, from: from} = entry, state) do
+  defp execute_queue_entry(%{payload: payload, from: from} = _entry, state) do
     case payload do
       fun when is_function(fun, 0) ->
         try do
