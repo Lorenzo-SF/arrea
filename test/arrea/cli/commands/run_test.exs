@@ -50,21 +50,23 @@ defmodule Arrea.CLI.Commands.RunTest do
 
   describe "validate_commands!/1" do
     test "an empty list halts with a clear stderr message" do
-      capture = ExUnit.CaptureIO.capture_io(:stderr, fn ->
-        try do
-          Run.validate_commands!([])
-        catch
-          :exit, _ -> :halted
-        end
-      end)
+      capture =
+        ExUnit.CaptureIO.capture_io(:stderr, fn ->
+          try do
+            Run.validate_commands!([])
+          catch
+            :exit, _ -> :halted
+          end
+        end)
 
       assert capture =~ "at least one --command is required"
     end
 
     test "a list of safe commands returns :ok without halting" do
-      capture = ExUnit.CaptureIO.capture_io(:stderr, fn ->
-        assert :ok = Run.validate_commands!(["echo hello", "echo world"])
-      end)
+      capture =
+        ExUnit.CaptureIO.capture_io(:stderr, fn ->
+          assert :ok = Run.validate_commands!(["echo hello", "echo world"])
+        end)
 
       refute capture =~ "command validation failed"
     end

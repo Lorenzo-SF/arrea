@@ -4,7 +4,7 @@ defmodule Arrea.MixProject do
   def project do
     [
       app: :arrea,
-      version: "3.0.0",
+      version: "3.1.0",
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -52,7 +52,7 @@ defmodule Arrea.MixProject do
       main: "readme",
       source_url: "https://github.com/Lorenzo-SF/arrea",
       homepage_url: "https://github.com/Lorenzo-SF/arrea",
-      source_ref: "3.0.0",
+      source_ref: "3.1.0",
       extras: ["README.md", "docs/README_ES.md", "LICENSE.md"],
       groups_for_modules: [
         "Core API": [Arrea, Arrea.Config, Arrea.Error, Arrea.Result],
