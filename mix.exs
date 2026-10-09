@@ -148,36 +148,14 @@ defmodule Arrea.MixProject do
 
   defp aliases do
     [
-      gen: ["deps.get", "compile", "batamanta", "install"],
-      install: fn _ ->
-        dest_dir = Path.expand("~/.local/bin")
-        File.mkdir_p!(dest_dir)
-        config = Mix.Project.config()
-        app_name = Atom.to_string(config[:app])
-
-        source_path = Path.expand("arrea")
-        dest_path = Path.join(dest_dir, app_name)
-
-        if File.exists?(source_path) do
-          case File.cp(source_path, dest_path) do
-            :ok ->
-              File.chmod!(dest_path, 0o755)
-              Mix.shell().info("✅  arrea instalado en #{dest_path}")
-
-            {:error, reason} ->
-              Mix.shell().error("❌ [ERROR] No se pudo copiar arrea: #{inspect(reason)}")
-          end
-        else
-          Mix.shell().error("❌ [ERROR] No se encontró el binario: #{source_path}")
-          Mix.shell().info("   ¿Ejecutaste 'mix batamanta' primero?")
-        end
-      end,
+      gen: ["clean_build", "deps.get", "compile", "batamanta"],
+      clean_build: &clean_build/1,
       qa: [
-        "format",
-        "compile",
-        "dialyzer",
-        "cmd sh -c 'MIX_ENV=test mix test --cover --exclude wip_cli'",
-        "cmd sh -c 'alaja json \"$(mix credo --strict --format=json)\"'"
+        "format --check-formatted",
+        "compile --warnings-as-errors --force",
+        "credo --strict",
+        "cmd sh -c 'MIX_ENV=test mix test --cover'",
+        "dialyzer"
       ],
       bench: [
         "run bench/bulkhead.exs",
@@ -185,5 +163,12 @@ defmodule Arrea.MixProject do
         "run bench/pool.exs"
       ]
     ]
+  end
+
+  defp clean_build(_args) do
+    File.rm_rf("_build")
+    File.rm_rf("deps")
+    File.rm_rf("mix.lock")
+    Mix.shell().info("✅  Clean slate.")
   end
 end
