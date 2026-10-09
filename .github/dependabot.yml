@@ -1,0 +1,50 @@
+# Dependabot
+#
+# ## Por qué está aquí
+#
+# Porque `mix hex.audit` —que corre en el CI— solo ve avisos de las deps que
+# Arrea **usa**. Las alertas de GitHub cubren el resto: lo que llega por
+# debajo, incluidas las dependencias de desarrollo de las dependencias.
+#
+# ## El caso de `req`
+#
+# El 2026-10-08 GitHub proponia actualizar `req 0.5.18` por dos CVE. Se
+# investigó y **Arrea no lleva `req`**:
+#
+# | comprobación                        | resultado |
+# |-------------------------------------|-----------|
+# | `mix.lock` de arrea y sus hermanas   | sin `req` |
+# | `mix deps.tree` (prod y `:dev`)      | sin `req` |
+# | `deps/req` en disco                  | no existe |
+# | `mix hex.audit`                      | limpio |
+#
+# La única mención es `deps/bandit/mix.exs` → `{:req, "~> 0.3", only:
+# [:dev, :test]}`, una dependencia de los **tests de Bandit**, que Mix nunca
+# resuelve para un proyecto que depende de él.
+#
+# Es decir: los avisos venían del grafo del ecosistema, que incluye las dev de
+# las dev. **Este fichero es justamente lo que los hace visibles y accionables**
+# en vez de dejarlos como ruido que hay que descartar a mano.
+#
+# ## Los dos intervalos
+#
+# - `hex`, semanal: lo que de verdad se compila. Una semana es bastante para un
+#   ecosistema donde se publica a diario.
+# - `github-actions`, mensual: las acciones cambian poco y romperlas cuesta un
+#   CI entero.
+version: 2
+updates:
+  - package-ecosystem: "hex"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "ci"
