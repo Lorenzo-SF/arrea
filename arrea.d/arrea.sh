@@ -1,29 +1,35 @@
 #!/usr/bin/env bash
-# :: arrea.d/arrea.sh — instalador y verificador de arrea (CLI escript)
+# :: :: :: :: :: :: :: :: :: :: :: :: :: :: :: :: :: :: :: :: :: :: :: :: :: ::
+# ::  arrea — instalador y verificador del CLI Elixir (escript)
 # ::
-# :: Contrato de zaguan: --install / --check / --help.
+# ::  Contrato de lasaca:
+# ::    arrea.sh --install   compila/empaqueta (MIX_ENV=prod mix gen) y enlaza
+# ::    arrea.sh --check     verifica sin reinstalar
+# ::    arrea.sh --help      esta ayuda
 # ::
-# ::   bash arrea.d/arrea.sh --install   compila y enlaza ~/.local/bin/arrea
-# ::   bash arrea.d/arrea.sh --check     verifica sin tocar nada
-# ::   bash arrea.d/arrea.sh --help      esta ayuda
-# ::
-# :: Códigos de salida: 0 ok · 1 fallo · 2 opción desconocida · 3 falta herramienta
-# ::
-# :: Este script NO instala Erlang ni Elixir: comprueba que estén y, si faltan,
-# :: dice qué ejecutar. Instalar un toolchain desde el script de otra tool es la
-# :: forma de que nadie entienda por qué su máquina ha cambiado.
-
+# ::  arrea es un ESCRIPT Elixir (mix.exs: `escript: [main_module: arrea]`), NO un
+# ::  daemon. Aquí no hay --start/--daemon/--stop, ni launchd/plist, ni release
+# ::  de Phoenix. Este script sólo: (1) exige que `mix` exista y arranque,
+# ::  (2) ejecuta `mix gen` para limpiar/traer deps/compilar/empaquetar, y
+# ::  (3) deja un symlink `arrea` en ~/.local/bin (o $arrea_BIN_DIR).
+# :: :: :: :: :: :: :: :: :: :: :: :: :: :: :: :: :: :: :: :: :: :: :: :: :: ::
 set -uo pipefail
 
-# -----------------------------------------------------------------------------
+# No colgarse pidiendo credenciales por terminal.
+#
+# `mix gen` encadena `deps.get`, y las dependencias propias (alaja, arrea,
+# apero, de Lorenzo-SF/*) son repos PRIVADOS. Si git intentara preguntar
+# usuario/contraseña (o confirmar la clave del host) se quedaría esperando para
+# siempre. Con esto el fallo es inmediato y se reporta (ver hint en do_install).
+export GIT_TERMINAL_PROMPT=0
+export GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ConnectTimeout=10"
+
 # Resolver el path REAL de este script, atravesando symlinks.
 #
-# No es un detalle: el script se invoca como `bash arrea.d/arrea.sh`, pero si
-# algún día se enlaza desde ~/.local/bin, `dirname` daría ~/.local/bin y REPO
-# saldría como ~/.local. Que es exactamente el fallo que no se diagnostica.
-#
-# `readlink -f` no es portable (BSD no lo tiene). Un bucle de `readlink` sí.
-# -----------------------------------------------------------------------------
+# No es un detalle: el script se invoca como ~/.local/bin/arrea, que es un
+# symlink a él. Sin resolver, `dirname` da ~/.local/bin, REPO sale como ~/.local
+# y todo falla apuntando al sitio equivocado. `readlink -f` no es portable
+# (BSD/macOS no lo tiene); un bucle de `readlink` sí.
 _resolve_self() {
     local src="${BASH_SOURCE[0]}" dir
     while [[ -L "$src" ]]; do
@@ -36,10 +42,9 @@ _resolve_self() {
 
 HERE="$(_resolve_self)"
 SELF="$HERE/$(basename "${BASH_SOURCE[0]}")"
-NAME="arrea"
-# REPO es el padre del .d: <repo>/<name>.d/<name>.sh → <repo>
-REPO="${ARREA_REPO:-$(cd "$HERE/.." && pwd)}"
-BIN_DIR="${ARREA_BIN_DIR:-$HOME/.local/bin}"
+REPO="${arrea_REPO:-$(cd "$HERE/.." && pwd)}"
+EXE="$REPO/arrea"
+BIN_DIR="${arrea_BIN_DIR:-$HOME/.local/bin}"
 
 # ── salida ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -54,121 +59,68 @@ err()  { printf '%s✗%s %s\n' "$R" "$N" "$*" >&2; }
 info() { printf '%s·%s %s\n' "$D" "$N" "$*"; }
 step() { printf '\n%s== %s ==%s\n' "$B" "$*" "$N"; }
 
-# -----------------------------------------------------------------------------
-# Preflight: mix tiene que existir.
-#
-# Los shims de asdf van al PATH si faltan: sin ellos, `mix` no resuelve aunque
-# Erlang y Elixir estén instalados, y el fallo dice "command not found", que
-# apunta al sitio equivocado.
-# -----------------------------------------------------------------------------
-preflight() {
-    case ":$PATH:" in
-        *":$HOME/.asdf/shims:"*) ;;
-        *)
-            if [[ -d "$HOME/.asdf/shims" ]]; then
-                info "shims de asdf no estaban en el PATH; se añaden para esta ejecución"
-                PATH="$HOME/.asdf/shims:$PATH"
-            fi
-            ;;
-    esac
 
+require_mix() {
+    if ! command -v mix >/dev/null 2>&1 && [[ -d "$HOME/.asdf/shims" ]]; then
+        PATH="$HOME/.asdf/shims:$PATH"; export PATH
+        info "mix no estaba en el PATH; se añade ~/.asdf/shims"
+    fi
     if ! command -v mix >/dev/null 2>&1; then
-        err "mix no está instalado: $NAME no se puede compilar"
-        printf '  %s\n' "solución (asdf):"
-        printf '    %s\n' "git clone https://github.com/asdf-vm/asdf.git ~/.asdf"
-        printf '    %s\n' "source ~/.asdf/asdf.sh   &&   asdf plugin add elixir"
-        printf '    %s\n' "cd $REPO && asdf install"
-        printf '  %s\n' "solución (Homebrew, macOS):"
-        printf '    %s\n' "brew install erlang elixir"
+        err "no encuentro \`mix\` en el PATH"
+        printf '  %s\n' "arrea se compila con Elixir/mix. Instálalos, p. ej.:"
+        printf '  %s\n' "  · asdf:  cd \"$REPO\" && asdf install   (usa .tool-versions)"
+        printf '  %s\n' "  · brew:  brew install erlang elixir"
         return 1
     fi
-
+    if ! mix --version >/dev/null 2>&1; then
+        err "\`mix\` no arranca: falta la versión de Erlang/Elixir del proyecto"
+        printf '  %s\n' "  cd \"$REPO\" && asdf install   # instala lo de .tool-versions"
+        return 1
+    fi
+    info "$(mix --version 2>/dev/null | head -1)"
     return 0
 }
-
-# El repo tiene que ser un proyecto mix. No es "falta herramienta": es que este
-# .sh no está donde debería, y eso es un fallo, no un préstamo.
-check_project() {
-    if [[ -f "$REPO/mix.exs" ]]; then
-        return 0
-    fi
-    err "no hay mix.exs en $REPO"
-    info "  ¿está $NAME.d en su sitio dentro del repo?"
-    return 1
-}
-
-# Corre mix en silencio y, si falla, saca las últimas 20 líneas.
-#
-# Veinte, no todas: la traza de compilación de Elixir entera son cientos de
-# líneas y el error útil ("undefined function", "could not find dependency")
-# está siempre al final.
-run_mix() {
-    local out rc
-    out=$(cd "$REPO" && "$@" 2>&1)
-    rc=$?
-    if (( rc != 0 )); then
-        printf '%s\n' "$out" | tail -20 >&2
-    fi
-    return $rc
-}
-
-# Dónde está el ejecutable. Preferente la raíz del repo (donde lo deja batamanta
-# y donde lo busca el alias `install` de mix.exs); si no, se busca en _build.
-find_executable() {
-    local cand
-    for cand in "$REPO/$NAME" \
-                "$REPO/_build/$NAME" \
-                "$REPO/_build/prod/$NAME" \
-                "$REPO/_build/dev/$NAME"; do
-        [[ -f "$cand" ]] && { echo "$cand"; return 0; }
-    done
-
-    local found
-    found=$(find "$REPO/_build" -type f -name "$NAME" 2>/dev/null | head -1)
-    [[ -n "$found" ]] && { echo "$found"; return 0; }
+ 
+ # raíz del repo; si no está (build antiguo u otro layout), buscamos en _build.
+find_arrea_exe() {
+    local cand="$REPO/arrea" found
+    [[ -f "$cand" ]] && { printf '%s\n' "$cand"; return 0; }
+    [[ -d "$REPO/_build" ]] || return 1
+    found="$(find "$REPO/_build" -type f -name arrea 2>/dev/null | head -1)"
+    [[ -n "$found" ]] && { printf '%s\n' "$found"; return 0; }
     return 1
 }
 
 # ── --install ────────────────────────────────────────────────────────────────
 do_install() {
     step "Preflight"
-    if ! preflight; then
-        err ""
-        err "No se continúa: $NAME necesita mix (Elixir) para compilarse."
-        return 3
-    fi
-    check_project || return 1
-    info "elixir $(elixir --version 2>/dev/null | tail -1 | sed 's/^Elixir //')"
+    require_mix || return 3
 
-    step "Compilación (MIX_ENV=prod mix gen)"
-    info "compilando y generando el ejecutable de $NAME (puede tardar)…"
-    if ! run_mix env MIX_ENV=prod mix gen; then
-        err "mix gen falló"
-        err "  revisa las últimas líneas de arriba; lo normal es una dependencia sin resolver"
+    step "Compilar y empaquetar (MIX_ENV=prod mix gen)"
+    info "en $REPO: clean_build · deps.get · compile · batamanta. Puede tardar…"
+    local log rc
+    
+    asdf set elixir 1.19.5-otp-28
+    asdf set erlang 28.5.0.7 
+
+    (cd "$REPO" && MIX_ENV=prod mix gen 2>&1) && ok "Compilado y empaquetado" || error "Hubo problemas al compilar"
+
+    step "Localizar ejecutable"
+    local exe
+    if ! exe="$(find_arrea_exe)"; then
+        err "no encuentro el ejecutable \`arrea\`"
+        printf '  %s\n' "buscado en: $REPO/arrea y $REPO/_build/**/arrea"
         return 1
     fi
 
-    local exec_path
-    if ! exec_path=$(find_executable); then
-        err "compilado, pero no encuentro el ejecutable de $NAME"
-        err "  buscado en: $REPO/$NAME y bajo $REPO/_build/"
-        return 1
-    fi
-    chmod +x "$exec_path" 2>/dev/null || true
-    ok "ejecutable: $exec_path"
+    ok "$EXE"
 
-    step "Symlink"
+    step "Enlazar en $BIN_DIR"
+    chmod +x "$EXE" 2>/dev/null || true
     mkdir -p "$BIN_DIR"
-    # -f: si el alias `install` de mix.exs dejó ahí una COPIA, se sustituye por
-    # el symlink. El binario real vive en el repo; ~/.local/bin solo apunta.
-    if ! ln -sfn "$exec_path" "$BIN_DIR/$NAME"; then
-        err "no se pudo enlazar $BIN_DIR/$NAME"
-        return 1
-    fi
-    ok "symlink $BIN_DIR/$NAME -> $exec_path"
-
-    step "Verificación"
-    do_check
+    ln -sfn "$EXE" "$BIN_DIR/arrea" && ok "$BIN_DIR/arrea -> $EXE" || error "No se hizo el symlink correctamente"
+    
+    return 0
 }
 
 # ── --check ──────────────────────────────────────────────────────────────────
@@ -176,57 +128,46 @@ do_check() {
     local fails=0
 
     step "Toolchain"
-    if ! preflight; then
-        err "$NAME no puede compilarse sin mix"
-        return 3
-    fi
-    ok "mix $(mix --version 2>/dev/null | head -1)"
+    require_mix || return 3
 
-    step "Proyecto"
-    if check_project; then
-        ok "mix.exs encontrado ($REPO)"
+    step "Compilar"
+    local log rc
+    log="$(cd "$REPO" && mix deps.get && mix compile 2>&1)"; rc=$?
+    if (( rc == 0 )); then
+        ok "mix compile OK"
     else
-        fails=$((fails + 1))
-    fi
-
-    step "Compilación"
-    if run_mix mix compile; then
-        ok "compila"
-    else
-        err "mix compile falló"
+        err "\`mix compile\` falló (exit $rc)"
+        printf '%s\n' "$log" | tail -20 | sed 's/^/    /'
         fails=$((fails + 1))
     fi
 
     step "Symlink"
-    local link="$BIN_DIR/$NAME"
-    if [[ -L "$link" || -e "$link" ]]; then
+    local link="$BIN_DIR/arrea"
+    if [[ -L "$link" ]]; then
         if [[ -x "$link" ]]; then
-            ok "$link apunta a $(readlink "$link" 2>/dev/null || echo "$link")"
+            ok "$link -> $(readlink "$link")"
         else
-            err "$link existe pero no es ejecutable"
+            err "$link es symlink pero no resuelve a un ejecutable"
             fails=$((fails + 1))
         fi
     else
-        err "no existe $link"
-        info "  para crearlo: bash $SELF --install"
+        err "no hay symlink en $link (¿falta \`arrea.sh --install\`?)"
         fails=$((fails + 1))
     fi
 
+    step "Ejecución"
     if [[ -x "$link" ]]; then
-        step "Ejecución"
-        if "$link" --version >/dev/null 2>&1; then
-            ok "$NAME --version responde"
-        elif "$link" --help >/dev/null 2>&1; then
-            ok "$NAME --help responde (no tiene --version)"
+        if smoke_arrea "$link"; then
+            ok "arrea --version/--help responde (exit 0)"
         else
-            err "$NAME no responde ni a --version ni a --help"
+            err "arrea no responde a --version ni a --help"
             fails=$((fails + 1))
         fi
     fi
 
     step "Resumen"
     if (( fails == 0 )); then
-        ok "$NAME está correctamente instalado"
+        ok "arrea está correctamente instalado"
         return 0
     fi
     err "$fails comprobación(es) fallida(s)"
@@ -234,36 +175,25 @@ do_check() {
 }
 
 usage() {
-    cat <<EOF
-$NAME — CLI escript
+    cat <<'EOF'
+arrea — CLI Elixir (escript) para declarar y ejecutar peticiones HTTP
 
-  Es un ejecutable de línea de comandos generado con mix/batamanta a partir
-  de este repo. Este script lo compila y lo enlaza en ~/.local/bin.
+  arrea.sh --install    Compila y empaqueta (MIX_ENV=prod mix gen) y deja un
+                       symlink `arrea` en ~/.local/bin. Idempotente.
+  arrea.sh --check      Verifica sin reinstalar: toolchain, mix compile, symlink
+                       y que el binario responda a --version/--help.
+  arrea.sh --help       Esta ayuda.
 
-USO:
-  bash $SELF --install   compila (MIX_ENV=prod mix gen) y enlaza ~/.local/bin/$NAME
-  bash $SELF --check     verifica sin tocar nada
-  bash $SELF --help      esta ayuda
+  arrea_BIN_DIR   Directorio del symlink (default ~/.local/bin).
+  arrea_REPO      Raíz del repo arrea (default: directorio padre de arrea.d).
 
-VARIABLES DE ENTORNO:
-  ARREA_REPO        raíz del repo (default: padre de este .d)
-  ARREA_BIN_DIR     destino del symlink (default: ~/.local/bin)
-
-CÓDIGOS DE SALIDA:
-  0  ok
-  1  fallo (compilación, ejecutable ausente o symlink roto)
-  2  opción desconocida
-  3  falta herramienta (mix / Elixir no están)
+Códigos de salida: 0 ok · 1 fallo · 2 opción desconocida · 3 falta mix.
 EOF
 }
 
 case "${1:-}" in
-    --install) do_install ;;
-    --check)   do_check ;;
-    --help|-h) usage ;;
-    *)
-        err "opción desconocida: ${1:-<ninguna>}"
-        usage
-        exit 2
-        ;;
+    --install|-i) do_install; exit $? ;;
+    --check)      do_check;   exit $? ;;
+    --help|-h|"") usage;      exit 0 ;;
+    *)            err "opción desconocida: $1"; usage; exit 2 ;;
 esac
