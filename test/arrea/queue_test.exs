@@ -33,10 +33,39 @@ defmodule Arrea.QueueTest do
       Queue.push(:q3, :vip, priority: 10)
       Queue.push(:q3, :normal_2, priority: 0)
 
-      assert {:ok, entry} = Queue.claim(:q3, 100)
+      # OJO: este test **antes no comprobaba nada**. Reclamaba tres entradas a
+      # variables que no volvia a mirar, y se llamaba "la prioridad manda".
+      # Por eso el bug de la cola inversada convivio con el modulo entero
+      # durante meses: un test con forma de rigor y sin una sola asercion
+      # sobre el orden. Ahora mira.
+      assert {:ok, %{payload: :vip}} = Queue.claim(:q3, 100)
       # Dentro de la misma prioridad, el orden de llegada.
-      assert {:ok, entry} = Queue.claim(:q3, 100)
-      assert {:ok, entry} = Queue.claim(:q3, 100)
+      assert {:ok, %{payload: :normal_1}} = Queue.claim(:q3, 100)
+      assert {:ok, %{payload: :normal_2}} = Queue.claim(:q3, 100)
+    end
+
+    test "tres prioridades, el orden es de mayor a menor, no al reves" do
+      queue(:q3b)
+      # Al reves de como se empujaron, a proposito: si el orden de la cola
+      # fuese "orden de llegada", esto pasaria. Y si fuese el de antes
+      # (menor primero), tambien.
+      Queue.push(:q3b, :baja, priority: 1)
+      Queue.push(:q3b, :media, priority: 5)
+      Queue.push(:q3b, :alta, priority: 9)
+
+      assert {:ok, %{payload: :alta}} = Queue.claim(:q3b, 100)
+      assert {:ok, %{payload: :media}} = Queue.claim(:q3b, 100)
+      assert {:ok, %{payload: :baja}} = Queue.claim(:q3b, 100)
+    end
+
+    test "peek devuelve el mismo que serviria, sin cogelo" do
+      queue(:q3c)
+      Queue.push(:q3c, :baja, priority: 1)
+      Queue.push(:q3c, :alta, priority: 9)
+
+      assert {:ok, %{payload: :alta}} = Queue.peek(:q3c, 100)
+      # Y el que mira no ha quitado nada.
+      assert {:ok, %{payload: :alta}} = Queue.claim(:q3c, 100)
     end
 
     test "el peso decide si cabe, y no caber NO es estar vacia" do
@@ -85,7 +114,22 @@ defmodule Arrea.QueueTest do
       {:ok, taken} = Queue.claim(:q8, 10)
       Queue.requeue(:q8, taken, front: true)
 
-      assert {:ok, entry} = Queue.claim(:q8, 10)
+      # Esto tambien miraba la variable y no la comprobaba. Con la cola
+      # invertida, "por delante de su propia prioridad" significaba AL FINAL.
+      assert {:ok, %{payload: :reintentado}} = Queue.claim(:q8, 10)
+      assert {:ok, %{payload: :nuevo}} = Queue.claim(:q8, 10)
+    end
+
+    test "front se Adelanta a su banda, pero no se cuela por delante de una mayor" do
+      queue(:q8b)
+      Queue.push(:q8b, :reintentado, priority: 5)
+      Queue.push(:q8b, :emergencia, priority: 50)
+      {:ok, taken} = Queue.claim(:q8b, 10)
+      Queue.requeue(:q8b, taken, front: true)
+
+      # La emergencia gana: front es "+1 en mi banda", no "primero de todo".
+      assert {:ok, %{payload: :emergencia}} = Queue.claim(:q8b, 10)
+      assert {:ok, %{payload: :reintentado}} = Queue.claim(:q8b, 10)
     end
   end
 

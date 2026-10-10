@@ -130,9 +130,15 @@ defmodule Arrea.Queue do
   def init(opts) do
     state = %{
       name: Keyword.fetch!(opts, :name),
-      # A `:gb_tree` keyed by {priority, sequence} so equal priorities keep
-      # insertion order: FIFO within a priority, which is what a queue that
-      # people are waiting in has to do.
+      # A `:gb_tree` keyed by **{-priority, sequence}** so equal priorities
+      # keep insertion order (FIFO within a priority) and the HIGHER priority
+      # comes out first.
+      #
+      # El signo menos es lo UNICO que hace que esto sea cierto, porque
+      # `:gb_trees` ordena **ascendente**: la clave mas pequena sale primero.
+      # Con `{priority, sequence}` a secas, la prioridad mas baja se servia
+      # primero, y el `@moduledoc` decia exactamente lo contrario. Medido
+      # antes del arreglo: push(baja:1, media:5, alta:9) -> salen 1, 5, 9.
       entries: :gb_trees.empty(),
       sequence: 0,
       owner: Keyword.get(opts, :owner),
@@ -158,7 +164,7 @@ defmodule Arrea.Queue do
           from: Keyword.get(opts, :from, pid)
         }
 
-        key = {entry.priority, state.sequence}
+        key = {-entry.priority, state.sequence}
 
         state = %{
           state
@@ -200,9 +206,9 @@ defmodule Arrea.Queue do
       if Keyword.get(opts, :front, false) do
         # Ahead of its own priority band, not at the head of everything: a VIP
         # that was already running does not outrank a fresh emergency.
-        {entry.priority + 1, state.sequence}
+        {-entry.priority - 1, state.sequence}
       else
-        {entry.priority, state.sequence}
+        {-entry.priority, state.sequence}
       end
 
     state = %{
