@@ -1,461 +1,524 @@
-# F2 · `Arrea.Resource` — entregable de la fase
+# Cierre de Arrea · dialyzer a cero + RPC dirigido
 
-**Repo:** Arrea · rama `resource-knapsack` (sin commit, sin push, sin PR)
-**Fecha:** 2026-10-10 · **Base:** `e1c16ff` · **Contrato:** `notes/f2-contrato.md`
-
----
-
-## 1 · Qué es esto, en una frase
-
-Un `GenServer` por nombre que lleva **dos cuentas con identidad estricta**: los
-**megas** que una carga ocupa de verdad (enteros, exactos, sin margen) y las
-**unidades de cuota** que una política le concede (decimales, con tolerancia). La
-reserva se queda committeada hasta que alguien devuelve **los dos** importes.
-
-Lo que `Bulkhead` no tiene y esto sí: *quién* tiene cada cosa, dos ejes que se
-distinguen, un motivo por eje con sus tres números, y una reserva que sobrevive
-a la función que la pidió.
+**Repo:** Arrea · rama `cierre-arrea` · **Base:** `5ae5a72` (el `main` de verdad, con la fase 2 ya dentro)
+**Fecha:** 2026-10-10 · 
 
 | | |
 |---|---|
-| Tests | 339 → **372** (+33 tests, +2 propiedades) |
-| Fallos | **6 o 7**: los 6 de siempre, y un séptimo **intermitente** que
-|        | también aparece en la base (§4) |
-| Cobertura | 64.6% → **66.3%** (base medida con el mismo método, §4) |
-| `lib/arrea/resource.ex` | **98.0%** (105 líneas relevantes, 2 sin cubrir) |
-| Mutantes | **15 de 15 cazados** (§5) |
+| Dialyzer | 6 errores → **0** |
+| Tests | 372 → **385** (+13) |
+| Fallos | 6, **los mismos 6 de la base** (CLI y Command; ninguno mío) |
+| Cobertura total | 66.4% → **66.8%** (base medida con el mismo comando) |
+| Mutantes | **8 de 9 cazados** (§7). El noveno se escapa, y se explica |
 
 ---
 
-## 2 · Los dos ejes
+## 1 · Los 6 errores de dialyzer
 
-La pregunta del dueño —«¿y usar ambas?»— es la que define el módulo. Un
-knapsack de GPU mezcla dos preguntas que no son la misma:
+### 1.1 · Lo que decía el enunciado, medido
 
-| Eje | Qué es | Dureza | Tipo |
-|---|---|---|---|
-| **capacidad** | megas que ocupa de verdad | **dura**: si no cabe, no cabe | **entero** |
-| **cuota** | presupuesto de política | **blanda**: es una decisión | **decimal** |
-
-Un modelo entra por megas y se declina por cuota, o al revés. Con un solo eje
-esas dos respuestas son el mismo número; con dos, cada rechazo dice **qué** no
-daba y **cuánto**:
-
-```elixir
-{:error, {:insufficient_capacity, %{requested: 12_288, available: 4_096, capacity: 16_384}}}
-{:error, {:quota_exceeded,        %{requested: 0.8,     available: 0.25,   quota: 1.0}}}
-```
-
-**Enteros en el eje duro es lo que arregla los defectos 1 y 2**, no la epsilon.
-Una GGUF pesa bytes y la caché KV son bytes; si el eje que decide se contara en
-decimales, `0.1 + 0.2` volvería a ser `0.30000000000000004` y haría falta una
-tolerancia para decidir si algo cabe. **La epsilon se queda, pero solo en la
-cuota**, que es donde las diferencias son de nil.
-
-Por defecto `quota` es `:infinity` y el eje blando no rechaza nunca: el
-comportamiento por defecto es el de un resource de una sola pregunta, y la
-decisión abierta nº1 (round-robin vs FIFO con VIP) no se toca. `quota` es **un
-número con nombre**, no un motor de políticas: aquí no hay VIP, ni prioridad, ni
-orden. Eso es del dueño.
-
-### La API
-
-```elixir
-start_link(name, capacity_mb, opts)         # opts: quota: número | :infinity
-acquire(name, holder, cost_mb, quota_cost) :: {:ok, receipt} | {:error, rejection}
-release(name, holder)                      :: {:ok, %{capacity:, quota:}} | {:error, :resource_not_found}
-available(name)                            :: non_neg_integer()      # megas
-quota_available(name)                      :: number() | :infinity   # cuota
-status(name)                               :: status | nil
-validate_opts(opts)                        :: :ok | {:error, Arrea.Error.t()}
-```
-
-`acquire/4` y no `acquire/3`: los dos importes se pasan **siempre**. El que solo
-pase uno está diciendo media verdad, y media verdad en un eje duro es un
-rechazo que no va a entender nadie.
-
-`release/2` devuelve **los dos** importes. Si devolviera solo uno, la fuga de
-capacidad del otro eje se repite en el otro sentido.
-
-### Lo que este módulo NO es
-
-Un motor de políticas. `quota` es un número con nombre; la política vive fuera
-(§5, D3/D8 del contrato). No persiste, no lee la GPU, no decide qué se descarga
-y no encola.
-
----
-
-## 3 · Los 5 gates, con la salida real
-
-### Gate 1 — `mix format --check-formatted` ✅
-
-```
-$ mix format --check-formatted
-$ echo $?
-0
-```
-
-### Gate 2 — `mix compile --force --warnings-as-errors` ✅
-
-```
-$ mix compile --force --warnings-as-errors
-==> arrea
-Compiling 47 files (.ex)
-Generated arrea app
-$ echo $?
-0
-```
-
-47 ficheros (46 de la base + `resource.ex`). Cero warnings.
-
-### Gate 3 — `mix credo --strict` ⚠️ exit 14 — **exactamente la base**
-
-```
-$ mix credo --strict
-$ echo $?
-14
-711 mods/funs, found 3 refactoring opportunities, 2 code readability issues,
-10 software design suggestions.
-```
-
-Los **15 avisos restantes son los de la base**, en ficheros que no son de esta
-fase: `lib/arrea/queue.ex:149` (cond con una sola condición), `lib/arrea/worker.ex`
-(40, 240, 252 — orden de alias y complejidad ciclomática), `lib/arrea/cli/definition.ex:33`,
-y diez `AliasUsage` en `worker_test.exs`, `long_running_os_process_test.exs`,
-`cli/dispatch_test.exs` y `cli/commands/run_test.exs`.
-
-**Cero avisos en `lib/arrea/resource.ex`, `lib/arrea/telemetry/events.ex` y
-`lib/arrea/supervisor.ex`.** Los 5 que la ronda anterior de mi trabajo había
-añadido (dos `UnsafeToAtom` por un helper que fabricaba átomos en runtime, dos
-`AliasUsage` y un `TagTODO` que disparaba la palabra «Todo» en un comentario) están
-arreglados de verdad: el helper de nombres ahora usa un pool de átomos **de
-compilación** que recorre buscando hueco en el Registry, `Code.Typespec` tiene su
-alias arriba, y el comentario está redactado de otra manera. **No hay ni un
-`# credo:disable` en el repo.**
-
-Lo dejo en 14 y no en 0 a propósito: llegar a 0 exige refactorizar
-`take_from_queues/1` de `worker.ex` (600 líneas, 78% de cobertura) y cuatro
-ficheros de test ajenos. Es el mismo criterio que el que fijaste para los 6
-errores de dialyzer: son preexistentes, se dejan escritos como tales y no se
-tocan. Si quieres el gate en 0, dímelo y me pongo.
-
-### Gate 4 — `MIX_ENV=test mix test --cover` ✅
-
-Corridas repetidas, con su salida real:
-
-```
-$ MIX_ENV=test mix test --cover      # x4
-5 properties, 372 tests, 7 failures   <-- esta dio 7: el intermitente
- 98.0% lib/arrea/resource.ex                         609      104        2
-[TOTAL]  66.4%
-5 properties, 372 tests, 6 failures
-[TOTAL]  66.3%
-5 properties, 372 tests, 6 failures
-[TOTAL]  66.3%
-```
-
-Los 6, y son los 6 estables de la base:
-
-```
-test execute/2 accepts environment properties and passes them to shell (Arrea.CommandTest)
-test execute/2 successfully executes a command (Arrea.CommandTest)
-test execute/2 :validate, false bypasses the safety check for trusted callers (Arrea.CommandTest)
-test execute_with_asdf/4 prepends ASDF variables (Arrea.CommandTest)
-test Arrea.CLI module main/1 delegates to Arrea.CLI.Definition.main/1 (Arrea.CLITest)
-test self hosted CLI Definition main/1 with no command shows help (Arrea.CLITest)
-```
-
-Son del entorno, no míos: `/usr/bin/sh: 1: source: not found` y
-`/bin/bash: line 1: /workspace/.home/.bashrc: No such file or directory`.
-
-**Y hay un séptimo test que oscila, y no es mío.** `Arrea.CLI.Commands.NodesTest`
-—«test module exists and has execute/1»—. Falla en la base en 3 de 4 corridas y
-en esta rama en 1 de 10. El recuento de fallos de este repo **no es
-determinista**, y el criterio es «los 6 estables, el intermitente cuando
-aparezca». Detalle y recuento en §4.
-
-Las 2 líneas sin cubrir de `resource.ex`, obtenidas con
-`mix coveralls.detail --filter resource.ex` (no de memoria), y las dos son
-defensa en profundidad:
-
-1. `resource.ex:352` — la rama de error de `init/1`. Inalcanzable por la API
-   pública: `start_link/3` valida antes de arrancar, e `init/1` vuelve a
-   validar. Es la convención que se copia de `Bulkhead`.
-2. `resource.ex:497` — el `catch :exit, _reason -> :not_found` de `safe_call/2`.
-   Solo se alcanza si el proceso muere **entre** el `Registry.lookup` y el
-   `GenServer.call`, una carrera de microsegundos. `Bulkhead` deja la misma línea
-   sin cubrir por el mismo motivo.
-
-### Gate 5 — `mix dialyzer` ⚠️ los mismos 6 preexistentes
+Los 6 son **cuatro specs**, y tienen una sola causa raiz. Salida real del primer
+`mix dialyzer` sobre `7b46e93` (recortada a lo que importa):
 
 ```
 Total errors: 6, Skipped: 0, Unnecessary Skips: 0
-done (warnings were emitted)
-Halting VM with exit status 2
+
+lib/arrea/bulkhead.ex:98:invalid_contract    run/2  — la funcion se deduce como none()
+lib/arrea/bulkhead.ex:100:7:no_return         run/2 has no local return
+lib/arrea/bulkhead.ex:125:invalid_contract    run/3  — idem
+lib/arrea/bulkhead.ex:127:no_return           run/3 has no local return
+lib/arrea/bulkhead.ex:130:10:call             safe_call(name, {:acquire, _}) breaks the contract
+lib/arrea/bulkhead.ex:300:invalid_contract    status_map/1: el @spec no coincide con el success typing
 ```
 
-Los seis, todos en `lib/arrea/bulkhead.ex`, fichero que **no he tocado**:
+### 1.2 · La causa: `safe_call/2` decia `atom()` y le llamaban con una tupla
 
-```
-lib/arrea/bulkhead.ex:98:invalid_contract
-lib/arrea/bulkhead.ex:100:7:no_return
-lib/arrea/bulkhead.ex:125:invalid_contract
-lib/arrea/bulkhead.ex:127:no_return
-lib/arrea/bulkhead.ex:130:10:call
-lib/arrea/bulkhead.ex:300:invalid_contract
+`lib/arrea/bulkhead.ex:275` (antes):
+
+```elixir
+@spec safe_call(atom(), atom()) :: term() | :not_found
 ```
 
-`Arrea.Resource`, `Arrea.Telemetry.Events` y `Arrea.Supervisor`: **cero avisos**.
+`run/3` la llama con `{:acquire, weight}`. El cuerpo acepta cualquier término y lo
+pasa tal cual al `GenServer.call`, de modo que **el spec era lo que estaba mal**,
+no el código. Y de ahí caían en cascada los dos `no_return`: con `term()` como
+retorno, dialyzer no puede probar que el `case` de `run/3` es exhaustivo, así que
+deduce `none()` y avisa de que la función se cae.
+
+El arreglo (el que pediste, y solo el que):
+
+```elixir
+@type reply ::
+        :ok
+        | :full
+        | {:available, integer()}
+        | {:status, status()}
+        | :not_found
+
+@spec safe_call(atom(), term()) :: reply()
+```
+
+Con el retorno **real** (`:ok | :full | :not_found` más los dos pares de
+`available/1` y `status/1`), los cuatro errores de `safe_call` caen solos. No hizo
+falta tocar ni `run/2` ni `run/3`, ni un solo `dialyzer:no_warn`, ni una sola
+linea de lógica.
+
+> **No hay specs mintiendo ahora**, y se nota en algo que dialyzer no dice:
+> `status()` no declaraba `:available`, y `status_map/1` sí lo devolvía. Eso no
+> era solo un `invalid_contract`: el tipo público de `status/1` describía un
+> mapa que la función nunca devolvía. Al añadir `available: integer()` al tipo,
+> el `invalid_contract` de la línea 300 desaparece **y de paso** el tipo público
+> dice la verdad. Un contrato loosening (`(map()) :: status()`) habría puesto el
+> dialyzer en verde y habría dejado la mentira puesta.
+
+### 1.3 · Salida final
+
+```
+$ mix dialyzer
+Total errors: 0, Skipped: 0, Unnecessary Skips: 0
+done in 0m5.56s
+done (passed successfully)
+EXIT=0
+```
+
+**Cero. No "los mismos 6".**
+
+### 1.4 · Un detalle que sale de paso
+
+`.dialyzer-ignore-warnings` lista `lib/arrea/worker.ex:493,497,498`, y dialyxir
+avisa en cada carrera: `No :ignore_warnings opt specified in mix.exs and default
+does not exist.` Ese fichero **no se está leyendo**: `mix.exs` no declara
+`ignore_warnings`, así que el fichero es inerte. No lo he tocado (no era el
+trabajo), pero conviene saberlo antes de confiar en él: hoy no silencia nada, y
+`worker.ex` no da ningún warning. Si alguien lo lee como "estas tres líneas están
+tapadas", se está engañando.
 
 ---
 
-## 4 · Antes y después, con la base medida de verdad
+## 2 · El RPC dirigido: `Worker.request/4`
 
-La cifra de 62,2% que dio la ronda anterior **era falsa** y está retirada: se
-midió con `lib/arrea/resource.ex` ya compilado pero sin sus tests, así que
-contaba 69 líneas al 0% que ahí no contaban. La base real se ha medido sobre un
-**clon limpio de `e1c16ff`** (`/tmp/arrea_base`, con su propio `MIX_BUILD_ROOT`),
-con el mismo método.
+`send_message/2` **no se ha tocado**. Sigue siendo un `cast` que avisa y sigue,
+con su comentario y su razon.
 
-| | Base `e1c16ff` | Ahora |
+### 2.1 · Lo que se ha construido
+
+La peticion **viaja por la cola que el worker ya sirve**, como una entrada mas, y
+la respuesta sale cuando le toca a esa entrada. No hay `call` al worker.
+
+```elixir
+@spec request(atom(), atom(), term(), keyword()) :: {:ok, term()} | {:error, term()}
+def request(worker_id, queue, message, opts \\ [])
+```
+
+```elixir
+defp execute_queue_entry(%{payload: {:arrea_request, ref, message}, from: from}, state) do
+  send(from, {:arrea_worker_reply, ref, run_request(message)})
+  Process.send_after(self(), :poll, state.poll_interval)
+  {:noreply, %{state | status: :idle}}
+end
+```
+
+Tres decisiones de mecanismo, y por que:
+
+1. **El mensaje es una funcion de aridad cero, y su valor de retorno es la
+   respuesta.** Es la convencion que ya tenia `execute_queue_entry/2` para los
+   payloads de cola; lo unico que cambia es que aqui el retorno no se tira. Arrea
+   sigue **sin mirar dentro del mensaje** mas alla de intentar ejecutarlo, y
+   sigue sin saber que es un modelo ni que es una GPU.
+2. **El `ref` viaja dentro del payload** (`{:arrea_request, ref, mensaje}`),
+   porque la cola es opaca: quien contesta no puede saber a quien pertenece la
+   respuesta si no viaja con ella. Es el mismo truco que el de `GenServer.call`,
+   y por eso una respuesta de una peticion vencida no puede satisfacer a otra.
+3. **El monitor al worker va ANTES del empujon.** Si el worker se muere entre el
+   `lookup` y el `push`, el `DOWN` ya esta en el buzon. Al reves, la peticion
+   estara esperando un plazo que no va a llegar nunca.
+
+### 2.2 · Motivos de respuesta, y lo que cada uno **no** aplana
+
+| Motivo | Cuando | Por que no es otro |
 |---|---|---|
-| Tests | 339 | **372** |
-| Propiedades | 3 | **5** |
-| Fallos | **6 estables** + 1 intermitente (4 corridas: 6 y 7) | **6 o 7**, como la base |
-| Cobertura total | **64.6%** | **66.3–66.4%** |
-| `lib/arrea/resource.ex` | — (no existe) | **98.0%** |
+| `{:ok, result}` | el worker ejecuto el mensaje | |
+| `{:error, :worker_not_found}` | no hay worker con ese id **ahora mismo** | el mismo criterio que `send_message/2` |
+| `{:error, :queue_not_found}` | la cola no existe | `Queue.push/3` se va con `:noproc`; sin traducirlo, el proceso de quien pregunta revienta |
+| `{:error, :not_executable}` | el mensaje no era una funcion de aridad cero | se responde **cuando el worker lo recoge**, no al vencer el plazo: quien espera tiene derecho a saberlo ya |
+| `{:error, {:exception, e}}` / `{:error, {kind, reason}}` | el payload fallo | el fallo es del mensaje de quien pregunta, no del worker; el worker sobrevive y sigue |
+| `{:error, {:worker_down, reason}}` | **el worker se fue mientras esperaba** | **decision abierta nº3** (§4) |
+| `{:error, :timeout}` | se cumplio el plazo | la entrada **sigue en la cola**: no hay cancelacion |
 
-### El recuento de fallos NO es determinista, y hay que decirlo
+### 2.3 · Lo que la respuesta **no** puede deshacer
 
-Tres corridas de la base limpia:
-
-```
-3 properties, 339 tests, 6 failures
-3 properties, 339 tests, 7 failures
-3 properties, 339 tests, 7 failures
-```
-
-Y la unión de los tests que fallan en esas tres corridas:
-
-```
-3x  test execute/2 accepts environment properties ... (Arrea.CommandTest)
-3x  test execute/2 successfully executes a command (Arrea.CommandTest)
-3x  test execute/2 :validate, false bypasses ... (Arrea.CommandTest)
-3x  test execute_with_asdf/4 prepends ASDF variables (Arrea.CommandTest)
-3x  test Arrea.CLI module main/1 delegates ... (Arrea.CLITest)
-3x  test self hosted CLI Definition main/1 with no command shows help (Arrea.CLITest)
-2x  test module exists and has execute/1 (Arrea.CLI.Commands.NodesTest)   <-- INTERMITENTE
-```
-
-**Seis fallan siempre y uno es intermitente.** Y hay que decirlo sin adornos,
-porque **el intermitente también aparece en esta rama**: lo vi una vez, en una
-corrida con `--cover`, después de haber escrito que «era estable en 3 corridas».
-Cosas por esa vía ya hubo una en este entregable, así que va el recuento entero.
-
-**En esta rama, 10 corridas:** 9 de 6 fallos y 1 de 7. La de 7 fue la primera
-`--cover` de la tanda final, con `resource.ex` al 98.0% y el total al 66.4%.
-
-**En la base limpia, 4 corridas:** una de 6 (`--cover`) y tres de 7.
-
-El criterio de aceptación correcto no es un número sino este: **los 6 estables
-siempre, y el intermitente cuando aparece.** No he tocado ninguno de los dos.
+Al vencer el plazo, la peticion no se retira de la cola. Otro worker que sirva
+esa cola puede cogerla y ejecutarla, y su respuesta llegara a un `ref` que ya no
+mira nadie. **Quien espera puede marcharse; lo que hay en la cola, no.** Y si el
+worker muere con la peticion dentro, lo que se ha perdido es la peticion: por eso
+`{:worker_down, _}` y no `:not_found` a secas.
 
 ---
 
-## 5 · Verificación por mutación: 11 de 11
+## 3 · Los tests, antes y después
 
-Un test que pasa no demuestra nada si el módulo puede estar mal. He falseado el
-módulo entero una línea cada vez, sobre una copia, y lo he pasado por los 33
-tests. **Los 15 mueren.** Lo relevante es *quién* los mata.
+### 3.1 · Rojo primero (test escrito antes que el código)
 
-La ronda anterior decía «11 de 11» sobre una tabla de 12 filas: el número estaba
-mal porque no se contaba. Ahora son 15 filas y 15 mutantes, y la tabla lleva
-número para que se puedan contar.
-
-| # | Mutante | Qué rompe | Quién lo caza |
-|---|---|---|---|
-| 1 | `cap` | `fits_capacity?` siempre cierta: nunca rechaza por megas | la propiedad + 9 tests |
-| 2 | `quota` | `fits_quota?` siempre cierta: nunca rechaza por cuota | 4 tests |
-| 3 | `leak` | admite un 5% de megas de más | el test del límite + la propiedad + 1 test |
-| 4 | `quota_leak` | admite un 5% de cuota de más | el test del límite + 1 test |
-| 5 | `swap` | un rechazo de megas con el nombre del eje de cuota | 8 tests |
-| 6 | `swap2` | un rechazo de cuota con el nombre del eje de megas | 4 tests |
-| 7 | `eps` | sin tolerancia en la cuota | «una cuota que cabe por poco no se rechaza» |
-| 8 | `pub` | sin redondeo al publicar | 4 tests |
-| 9 | `ident` | `===` vuelve a ser `==` | «la identidad es estricta: 1 no es el titular 1.0» |
-| 10 | `release1` | `release/2` devuelve solo un eje | 11 tests |
-| 11 | `persist` | escribe su estado en el directorio de datos | «la verdad no esta en disco» + el de Candil |
-| 12 | `candil` | importa un módulo `Candil.*` de verdad | «el modulo no importa nada de Candil» |
-| 13 | `multi` | `release/2` devuelve una reserva y **quita todas** | la propiedad + los 3 tests de titular repetido |
-| 14 | `trampa1` | solo encuentra la reserva si es la **primera** de la lista | la propiedad + 2 tests |
-| 15 | `trampa2` | quita la suya y **tira las de delante**, que son de otros | la propiedad + 2 tests |
-
-### Los tres mutantes que sobrevivieron
-
-**Tres mutantes sobrevivieron en ronda.** El más importante: `multi` —el del
-defecto de las reservas múltiples— pasaba la propiedad entera.
-
-**`quota_leak` sobrevivió a todo en una ronda intermedia.** Un módulo que admitía
-un 5% de cuota de más pasaba los 29 tests. La causa era de los **generadores**,
-no del módulo: los importes se generaban como números absolutos (0,01–4,00 de
-cuota) contra cuotas de 0,10–10,00, así que casi todo se rechazaba en el primer
-intento y **el pico nunca se acercaba al límite**. Ahora los importes son
-*fracciones* de los límites (30%–120% cada uno), y además hay un test de
-frontera determinista —«justo entra y una unidad más no»— que es el que mata a
-los dos mutantes de fuga sin depender de la semilla.
-
-**`persist` no lo cazaba el test que decía cazarlo.** El test de «no persiste»
-listaba un directorio temporal que **no se le pasaba a nadie**: el refute no
-podía fallar porque el módulo no tenía forma de escribir ahí. Ahora el
-directorio se le da a la aplicación (`Application.put_env(:arrea, :data_dir, dir)`,
-que es donde un módulo de Arrea escribiría si fuera a persistir), y el test
-comprueba **además** que el módulo no puede escribir: no tiene funciones de
-fichero en su tabla de `imports`. Los dos juntos: el dato de que se escriba y el de que no pueda.
-
-**`multi` sobrevivió porque la propiedad no tenía dos tareas vivas con el mismo
-titular.** Con importes del 30%-120% del límite, casi todo se rechazaba en el
-primer intento: sólo cabía una carga a la vez, así que la colisión de titulares
-no llegaba a ocurrir. Ahora los importes son del 10%-30% y el pool de titulares
-tiene 1 a 3 elementos, de modo que varias cargas conviven y compiten por el
-mismo titular — y la propiedad, con sus medidores por fuera del GenServer, ve
-cómo se desvanece la cuenta.
-
-**El mismo agujero, en el test de la frontera con Candil
-
-`for {:import, module, _f, _a} <- imports` recorriera **cero entradas**: el chunk
-`imports` de un BEAM son triplas `{módulo, función, aridad}`, no cuartetas. El
-refute se ejecutaba 0 veces. Medido: 28 entradas, 0 coincidencias con la forma
-esperada. Ahora el `for` usa la forma real y hay dos aserciones que impiden que
-vuelva a pasar en silencio: que la tabla no esté vacía, y que contenga una
-entrada conocida. La última fila de la tabla de mutantes es la prueba: metiendo
-un `import Candil.Fake` de verdad, el test cae con
-`Arrea.Resource importa Candil.Fake: la frontera con Candil esta cruzada`.
-
----
-
-## 6 · Lo que la revisión round 2 encontró, y tres correcciones mías
-
-### 6.1 · El defecto que quedaba: una reserva de más, perdida para siempre
-
-`take_holder/2` encontraba **todas** las reservas de un titular, devolvía **la
-primera** y quitaba **todas**. Con el escenario de todos los días —el mismo
-modelo cargado dos veces— dos `release` se llevaban 8 GB sin avisar:
+`test/arrea/worker_request_test.exs`, 13 tests, contra un `Arrea.Worker` sin
+`request/4`:
 
 ```
-acquire(:m, :llama7b, 4_000, 1.0)
-acquire(:m, :llama7b, 4_000, 1.0)
-acquire(:m, :llama7b, 4_000, 1.0)
-release(:m, :llama7b) x3
-  -> used=8000  quota_used=2.0  holders=[]    # 8 GB y 2.0 de cuota, sin dueño
+$ mix test test/arrea/worker_request_test.exs
+     ** (UndefinedFunctionError) function Arrea.Worker.request/4 is undefined or private
+     ** (UndefinedFunctionError) function Arrea.Worker.request/3 is undefined or private
+     ... (los 13)
+Finished in 4.3 seconds (0.00s async, 4.3s sync)
+13 tests, 13 failures
 ```
 
-`used: 8000` con `holders: []` es un `available/1` que miente para siempre. Y
-violaba el `@doc` del propio módulo, que ya decía lo correcto («dos `acquire`
-del mismo titular son dos reservas, y cada `release` devuelve una»): el
-código hacía lo contrario de lo documentado. **No era una regresión de esta
-ronda**: la versión de la ronda 1 usaba `Enum.split_with` y tenía lo mismo.
+Rojo por la razon correcta: la función no existe. No por un typo en el test.
 
-**Arreglo:** una reserva devuelta, una devuelta, y `before ++ rest` para que lo
-que había antes de la coincidencia se conserve. Cazado por el mutante 13.
+### 3.2 · Verde
 
-**Y por qué nadie lo caía**, que es la parte instructiva: de los ~50 `acquire`
-de los dos ficheros de test, **ninguno repetía titular**, y la propiedad
-generaba `titular = {:titular, unique_integer}` por tarea, siempre distinto.
-Ninguno de los ~50 `acquire`, ningún mutante y el 98% de cobertura se pasaban
-por encima. Un camino entero sin iluminar.
+```
+$ mix test test/arrea/worker_request_test.exs
+Finished in 1.1 seconds (0.00s async, 1.1s sync)
+13 tests, 0 failures
+```
 
-### 6.2 · Me caí en la misma trampa dos veces al arreglarla
+### 3.3 · Que no puede ocurrir, test a test
 
-Arreglando `take_holder` escribí una versión que sólo buscaba la reserva si era
-**la primera** de la lista (`{[], [{_h, ...} | rest]}`). Con un titular de tres,
-soltar al del medio devolvía cero. Y la segunda versión devolvía sólo `rest`,
-**tirando las reservas que había antes** —que son de otros titulares—, y la
-cuenta de otro se desvanecía sin que nadie la tocara.
+Ningun test dice solo "responde". Cada uno ata una propiedad:
 
-Las dos las cazó la simulación con titulares compartidos, y las dos eran
-silenciosas. Por eso hay dos mutantes más en la tabla, `trampa1` y `trampa2`, y
-un test que suelta **al titular del medio** de una lista de tres, que es el que
-no existía y que más daño habría hecho.
-
-### 6.3 · Corrección 1: el `2.77e-17` también era del módulo
-
-Escribí que el residuo venía del medidor del test y no del módulo. **Era falso.**
-Lo medí con la etiqueta puesta: cuatro reservas de 0.1 devueltas una a una dan
-`2.7755575615628914e-17` en la aritmética IEEE-754, y tanto el medidor del test
-como la cuenta del módulo acumulan ese mismo residuo. En mi reproducción el
-módulo salía limpio (`used: 0.0`) porque los titulares eran distintos y el orden
-de las operaciones cancelaba — fue una casualidad, no una diferencia de fondo.
-
-Lo que hoy mantiene la cuenta del módulo en cero son **dos** mecanismos
-independientes, y los dos medidos: el `max(0.0, ...)` del `release`, que se
-queda con el suelo, y `publish/1`, que manda a `0.0` cualquier cosa por debajo
-de `1.0e-9`. El arreglo de fondo sigue siendo el bueno y el primero: **el eje
-duro es entero y no tiene nada que ver con esto.
-
-### 6.4 · Corrección 2: la identidad no era *el* problema de capacidad
-
-Presenté el defecto 3 —la identidad laxa, `==` en vez de `===`— como si cerrara
-el problema de la fuga. Cerraba **una** fuga y dejaba otra abierta, y peor: la
-de las reservas múltiples perdía megas y cuota de verdad, y la de la identidad
-era un caso particular de la misma regla. El `@doc` lo decía bien y el código
-no; ahora los dos lo hacen bien, y hay un test para cada regla.
-
-### 6.5 · Corrección 3: la cuenta de mutantes
-
-«11 de 11» sobre una tabla de 12 filas. El número estaba mal porque no se
-contó. Ahora hay 15 filas numeradas y 15 mutantes, y la tabla lleva índice para
-que se puedan contar con los dedos.
-
-### 6.6 · Los cinco defectos de la revisión round 1
-
-| # | Defecto | Arreglo | Verificado por |
-|---|---|---|---|
-| 1 | la propiedad es falsa con fracciones | eje duro **entero** (exacto, sin epsilon); eje blando con **tolerancia** | mutantes 3 y 4 |
-| 2 | rechaza lo que cabe y publica basura | **tolerancia relativa** en la cuota + **redondeo a 6 decimales al publicar** | mutantes 7 y 8 |
-| 3 | fuga de capacidad por identidad | `===` en vez de `==` — y **no era la única**: la de reservas múltiples seguía abierta (§6.1) | mutante 9, y el 13 para la otra |
-| 4 | tres tests que no podían fallar | imports, persistencia y propiedades **verificados mutando el módulo** | §5 |
-| 5 | tres cifras falsas en el entregable | base sobre clon limpio; no determinación **declarada** | §4 |
-
----
-
-## 7 · Ficheros tocados
-
-| Fichero | Cambio |
+| Test | Lo que no puede pasar |
 |---|---|
-| `lib/arrea/resource.ex` | **nuevo**, 609 líneas. El módulo. |
-| `lib/arrea/telemetry/events.ex` | `resource_metadata/0` con los dos ejes, `emit_resource/2`. |
-| `lib/arrea/supervisor.ex` | `+Arrea.Resource.Registry` antes de `Arrea.Monitor`, y la numeración del `@moduledoc`. |
-| `test/arrea/resource_test.exs` | 33 tests. |
-| `test/arrea/resource_property_test.exs` | 2 propiedades. |
-| `deliverable.md` | este fichero. |
+| el payload se ejecuta **dentro** del worker | que la peticion sea un `Task` con otro nombre: el trabajo se haria fuera del presupuesto |
+| el que espera puede marcharse | que el worker se quede parado hasta que el que pregunto pase a por la respuesta |
+| la respuesta caduca con su peticion | que la respuesta **tardia** de la primera conteste a la segunda |
+| la peticion se consume | una entrada respondida que se queda en la cola y otro worker la ejecuta otra vez |
+| lo que no se puede ejecutar | quemarse el plazo entero para recibir un silencio |
+| un payload que revienta | que el que espere no se entere, o que caiga el worker |
+| el worker no recuerda las peticiones | que el worker guarde estado de las peticiones (crece sin limite; y persistencia) |
+| una peticion mas prioritaria se sirve antes | que la peticion tenga un camino aparte que se salte la cola |
+| una peticion que no cabe en el presupuesto | que se sirva igualmente |
+| un worker que nunca existio | esperar el plazo entero para descubrir que no hay nadie |
+| un worker que se va mientras espera | que se responda `:worker_not_found` (o `:timeout`) cuando la peticion se ha perdido |
+| una cola que no existe | un crash en el proceso de quien pregunta |
 
-**No tocado:** `mix.exs`, `Bulkhead`, `Queue`, `Registry`, ropero, Candil, ningún
-fichero ajeno a la fase, y los tests de `command`/`cli`.
+Dos detalles de los tests que merecen nombre:
+
+- El orden **no** se comprueba con `assert_receive`: `assert_receive` se salta lo
+  que no coincide, asi que si `:normal` llegase antes que `:peticion`, un
+  `assert_receive :peticion` pasaria igual. Hay un helper `recoge_etiquetas/2` que
+  recoge **en orden** y compara la lista entera.
+- "El worker se va" se hace con `Process.exit(pid, :kill)`, **no** con
+  `GenServer.stop/1`, y no es capricho: un worker ejecutando un payload esta
+  dentro de un callback, y ahi un `stop` educado no se le cuela hasta que el
+  payload acaba. Se vio fallando el test (5 segundos de plazo) antes de
+  entenderlo. **Es un hallazgo, no un detalle del test** (§8).
 
 ---
 
-## 8 · Lo que no he podido verificar
+## 4 · Las tres decisiones abiertas, y mi respuesta
 
-| | |
-|---|---|
-| **CI** | No ejecutado. Sin commit, sin push, sin PR: el commit es tuyo porque tienes que mirar el CI antes de pedir el merge. |
-| `mix credo --strict` en 0 | Sale 14. Los 15 avisos son de `queue.ex`, `worker.ex`, `cli/definition.ex` y tres ficheros de test ajenos. Dime si quieres que los ataque. |
-| `mix dialyzer` en 0 | Los 6 errores son de `bulkhead.ex`, preexistentes, no tocados por indicación tuya. |
-| `mix docs` | Fuera de los gates. `Arrea.Resource` no está en `groups_for_modules` de `mix.exs` (no lo toco por restricción), así que ExDoc lo dejará en «módulos sin agrupar». |
-| Documentos de Candil | D6 del contrato sin tocar: los dos documentos que dicen que `Bulkhead` «cuenta slots» y que «no se puede pesar» ya se pueden corregir. Y la decisión abierta nº1 (round-robin vs VIP) sigue viva: `quota` es el número donde va a caer, no el motor. |
-| Los 4 tests de Candil que mienten (§3.1) | Siguen buscando dos literales. Está bien: no hay refusal todavía. Cuando lo escribas, que miren el `@type reason` de `Candil.Error`. |
-| Gates sobre un árbol limpio | Todo corre sobre el `_build` de `/opt/candil-build`, que ya venía sucio de una sesión anterior (los beams llevan `source:` con una ruta NFS antigua). La base sí la medí en un árbol limpio, en `/tmp/arrea_base`, y con su propio build. |
+### (1) · ¿Prioridad y peso de la cola, o camino aparte?
+
+**Implementado: por la cola.** La peticion es una entrada mas, con la prioridad
+y el peso que se le digan (`:priority`, `:weight` en las opciones), y el
+presupuesto la puede rechazar igual que a las demas.
+
+Por que: un camino aparte son dos maquinas de despacho, dos reglas de prioridad y
+un segundo sitio donde un trabajo puede quedarse esperando sin que nadie lo sepa.
+Encima, el camino aparte tiene que inventarse sus propias excusas: si la peticion
+no cabe en el presupuesto, ¿que dice? Aqui dice lo que dice el resto — `:timeout`,
+"nadie me ha cogido" — y la entrada sigue ahi para quien tenga hueco.
+
+Lo que se paga: una peticion puede quedarse detras de entradas mas prioritarias.
+Es la decision correcta para un sistema donde los agentes se hablan entre ellos, y
+es exactamente lo contrario de lo que hacia un `call`.
+
+### (2) · ¿Plazo por defecto?
+
+**Implementado: `30_000` ms**, y **no inventado**: es el unico plazo por defecto
+que ya tenia Arrea (`@default_timeout 30_000` en `Arrea.Command`, y el mismo
+numero en `Arrea.Leader.CommandRunner`). Dos numeros distintos para lo mismo
+serian dos politicas. Se cambia por `:timeout`, y `:infinity` se admite.
+
+Si para Candil tiene sentido otro (una conversacion entre agentes que puede
+durar mas de 30 s), es un `opts` y ya; pero **esa cifra es del dueño**, no mia.
+
+### (3) · Si el worker muere mientras espera, ¿que motivo?
+
+**Implementado: `{:error, {:worker_down, reason}}`**, con la razon del `DOWN`
+dentro. No `:not_found`, que es el de "no habia nadie".
+
+Porque la distincion es exactamente la que este repo no aplana: uno nunca
+existio, el otro se llevo tu pregunta dentro y se fue. Un plano dice "tu peticion
+sigue ahi" cuando lo que ha pasado es que se ha perdido. Y el `reason` se conserva
+porque "se fue" y "murio" y "le pararon los pies" no son lo mismo para quien
+decide si reintenta.
+
+La alternativa que dejo sobre la mesa, si la quieres plana: `:worker_stopped`, sin
+la razon. **No lo recomiendo**: pierde informacion que el que espera si tiene.
+
+### (4) · Una cuarta, que no me habias dado
+
+El arity de tu propuesta era `request(atom(), term(), timeout())`. Lo implemented
+como **`request(worker_id, queue, message, opts)`**, por dos razones:
+
+1. **La cola es explicita.** `request/3` tendria que deducir por donde encolar,
+   y un worker puede servir varias. Elegir una en silencio seria inventarse una
+   regla que el modulo no conoce, que es la misma clase de mentira que
+   `send_message/2` cometia. Si el worker sirve una sola cola, el nombre ya lo
+   tiene quien la creo.
+2. **Las opciones, en vez de un plazo suelto.** Si la peticion entra con la
+   prioridad y el peso de la cola (decision 1), tiene que poder **fijarlos**, y un
+   `timeout` posicional no lleva eso dentro.
+
+Los tres valores por defecto son los de la cola: `priority: 0`, `weight: 1`.
 
 ---
 
-## 9 · Lo que me queda por decidir a ti
+## 5 · Los 5 gates, con la salida real
 
-1. **El nombre del eje blando.** Lo he llamado `quota`. La alternativa que
-   apuntaste era `policy_budget`. El nombre importa: es el que la decisión
-   abierta nº1 va a usar durante años.
-2. **Si `quota` es un número o una lista por política.** Hoy es un número, como
-   dijiste. Si mañana hay VIP, cabe dentro del mismo número (más cuota) o pide
-   otra cosa, y eso no lo decido yo.
-3. **Los gates de credo y dialyzer en 0**, si quieres que ataque los preexistentes.
-4. **La doc de Candil** (D6) y la **decisión abierta nº1**, que este módulo ya
-   tiene dónde vivir: `Arrea.Resource`, el número `quota`.
+Todos con el arbol tal y como se entrega, `CANDIL_DATA_DIR` a un temporal, y sin
+`--seed` para que la salida sea la que sale. Son los mismos cinco que `mix qa`.
+
+### Gate 1 · `mix format --check-formatted`
+
+```
+$ mix format --check-formatted
+EXIT=0
+```
+
+### Gate 2 · `mix compile --warnings-as-errors --force`
+
+```
+$ mix compile --warnings-as-errors --force
+Compiling 47 files (.ex)
+Generated arrea app
+EXIT=0
+```
+
+### Gate 3 · `mix credo --strict`
+
+```
+$ mix credo --strict
+Analysis took 4.2 seconds (0.3s to load, 3.8s running 70 checks on 86 files)
+723 mods/funs, found 3 refactoring opportunities, 2 code readability issues,
+             10 software design suggestions.
+EXIT=14
+```
+
+**El gate esta en ROJO, y lo estaba antes de tocar nada.** Medido sobre el arbol
+limpio (`git stash -u` y recontar):
+
+```
+ANTES  : 711 mods/funs, 3 refactoring, 2 readability, 10 design   -> 15 avisos
+DESPUES: 723 mods/funs, 3 refactoring, 2 readability, 10 design   -> 15 avisos
+```
+
+**Cero avisos nuevos.** Los 15 son los de siempre (`Arrea.Parallel`,
+`Arrea.Leader`, `Arrea.Queue.handle_call/3` y `Arrea.Worker.take_from_queues/1`,
+este ultimo con complejidad 10 sobre un maximo de 9 y ya lo tenia antes). El CI
+de `.github/workflows/ci.yml` tiene el paso de credo **comentado** con un
+comentario que lo dice. No lo he arreglado: no es de este trabajo.
+
+### Gate 4 · `MIX_ENV=test mix test --cover`
+
+```
+$ MIX_ENV=test mix test --cover
+ 81.3% lib/arrea/worker.ex                           782      193       36
+ 89.6% lib/arrea/bulkhead.ex                        334       58        6
+[TOTAL]  66.8%
+----------------
+5 properties, 385 tests, 6 failures
+EXIT=2
+```
+
+Los 6 fallos, **los mismos 6 de la base** y ninguno mio:
+
+```
+1) test self hosted CLI Definition main/1 with no command shows help (Arrea.CLITest)
+2) test Arrea.CLI module main/1 delegates to Arrea.CLI.Definition.main/1 (Arrea.CLITest)
+3) test execute_with_asdf/4 prepends ASDF variables (Arrea.CommandTest)
+4) test execute/2 :validate, false bypasses the safety check for trusted callers (Arrea.CommandTest)
+5) test execute/2 accepts environment properties and passes them to shell (Arrea.CommandTest)
+6) test execute/2 successfully executes a command (Arrea.CommandTest)
+```
+
+Y con matiz, porque decir "6" a secas no cuenta la historia entera: en **5
+ejecuciones seguidas** de la suite completa sobre este arbol, una dio **7** fallos.
+El septimo, cuando aparece, es siempre el mismo y **tambien cae en la base**:
+
+```
+run1: 385 tests, 7 failures
+run2: 385 tests, 6 failures
+run3: 385 tests, 6 failures
+run4: 385 tests, 6 failures
+run5: 385 tests, 6 failures
+
+run3 septimo: 7) test module exists and has execute/1 (Arrea.CLI.Commands.NodesTest)
+```
+
+Es el "septimo intermitente" que ya mentionaba el entregable de F2 (§8.3).
+
+Comparado con la base, mismo comando:
+
+| | base (`7b46e93`) | este arbol |
+|---|---|---|
+| tests | 372 | **385** (+13) |
+| fallos | 6, o 7 con `--seed 99` | 6, o 7 con `--seed 99` y en ~1 de cada 5 |
+| cobertura | 66.4% | **66.8%** |
+
+### Gate 5 · `mix dialyzer`
+
+```
+$ mix dialyzer
+Total errors: 0, Skipped: 0, Unnecessary Skips: 0
+done in 0m5.56s
+done (passed successfully)
+EXIT=0
+```
+
+---
+
+## 6 · Los tests, los mismos, antes y después
+
+| Fichero | antes | despues |
+|---|---|---|
+| `test/arrea/worker_request_test.exs` | **no existe** | 13 tests, 0 fallos |
+| suite completa | 372 tests, 6 fallos | 385 tests, 6 fallos |
+
+`Arrea.Worker` no habia cambiado de numero de tests: los 13 son nuevos y todos
+en el fichero nuevo. Ni `worker_test.exs` ni `worker_serves_queues_test.exs` se
+tocaron.
+
+---
+
+## 7 · Mutacion: 8 de 9 cazados
+
+Se muta el codigo a proposito, se ejecuta `test/arrea/worker_request_test.exs`, y
+se restaura. Lo que se busca no es "falla", es **que test lo caza**.
+
+| # | Mutante | Resultado |
+|---|---|---|
+| M1 | la peticion se empuja con `priority: 0, weight: 1` fijos | **CAZADO** · 13 tests, 1 fallo |
+| M2 | se acepta cualquier respuesta, sin mirar el `ref` | **CAZADO** · 13 tests, 1 fallo |
+| M3 | un worker que se va se responde `:worker_not_found` | **CAZADO** · 13 tests, 1 fallo |
+| M4 | el worker no se vigila mientras espera | **CAZADO** · 13 tests, 11 fallos |
+| M5 | el worker ejecuta el payload y **tira** el resultado, responde `:ok` | **CAZADO** · 13 tests, 5 fallos |
+| M6 | lo no ejecutable se responde como las demas entradas: un log y nada mas | **CAZADO** · 13 tests, 1 fallo |
+| M7 | el payload se ejecuta sin `try`: si revienta, cae el worker | **CAZADO** · 13 tests, 1 fallo |
+| M8 | se borra la clausula de peticion: la entrada cae en el camino viejo | **CAZADO** · 13 tests, 7 fallos |
+| M9 | `demonitor` sin `[:flush]` | **SE ESCAPA** · 13 tests, 0 fallos |
+
+**M9 se escapa, y no tengo un test que lo cace.** Explico por que, porque
+"escapa" sin explicar es una deuda camuflada de verde: para que el `[:flush]`
+importe tiene que caer un `DOWN` en el buzon **entre** el `send` de la respuesta y
+el `demonitor` de quien espera, que es una ventana de microsegundos. Y no se puede
+provocar desde un test, porque la respuesta se manda **despues** de que el payload
+termina: un payload que mate al worker mata al worker antes de que exista
+respuesta que enmascarar. Se queda por revision, no por test. El riesgo real es
+un `{:DOWN, _, :process, _, _}` suelto en el buzon de un proceso que ya termino,
+que es ruido, no corrupcion.
+
+---
+
+## 8 · Hallazgos que NO he arreglado (y por que)
+
+### 8.1 · `Arrea.Queue` sirve la prioridad **mas baja** primero
+
+El moduledoc dice *":priority | an ordering. **Higher runs first**"*, y el worker
+si elige la mayor prioridad entre colas. Pero dentro de una sola cola:
+
+```elixir
+defp first_fitting(entries, budget) do
+  entries
+  |> :gb_trees.to_list()      # ascendente por {priority, sequence}
+  |> Enum.find(fn {_key, entry} -> entry.weight <= budget end)
+end
+```
+
+Medido, no leido:
+
+```
+$ Queue.push(:q, :baja, priority: 0); Queue.push(:q, :alta, priority: 9)
+$ Queue.push(:q, :media, priority: 5); Enum.map(1..3, &Queue.claim(:q, 100).payload)
+orden de claim: [:baja, :media, :alta]
+```
+
+**Es un bug preexistente de `Arrea.Queue`, no mio, y no lo he tocado**: cambiarlo
+altera el orden de entrega de todo lo que ya consume la cola, y esa es una
+decision del dueño, no un efecto secundario de cerrar dialyzer. El arreglo no es
+voltear la lista (eso cambiaria el FIFO dentro de una prioridad por LIFO): es
+recorrer bandas de prioridad de mayor a menor, y dentro de cada banda seguir
+tomando la mas antigua.
+
+**Como afecta a este trabajo:** mis tests **no** miden el orden dentro de una sola
+cola, precisamente para no dejar escrito como verdad un bug. El test de prioridad
+mide el caso que si es del worker y si esta probado (elegir entre **dos** colas),
+y el resto afirma cosas que el bug no toca: la peticion viaja con su prioridad y su
+peso, y el presupuesto la rechaza.
+
+### 8.2 · `GenServer.stop/1` no interrumpe a un worker que ejecuta un payload
+
+Descubierto porque el test de "el worker se va mientras espera" fallaba con
+`:timeout` en vez de con el motivo del worker. Un worker ejecutando un payload esta
+dentro de un callback, y ahi el `stop` educado no se le cuela hasta que el payload
+acaba: **cinco segundos de `Process.sleep(5_000)` en el payload, cinco segundos de
+`GenServer.stop`**. Solo un `kill` lo para.
+
+Consecuencia para Candil: **`Worker.stop/1` no es una parada de emergencia.** Si un
+worker se ha quedado atascado en un payload, la unica forma de pararlo es matarlo.
+No lo he cambiado; lo señalo porque es el tipo de dato que hace falta antes de
+usarlo en un sistema de agentes.
+
+### 8.3 · El séptimo fallo intermitente
+
+Con `--seed 99` (y solo con seed 99, en cuatro ejecuciones seguidas) cae un
+septimo: `test module exists and has execute/1 (Arrea.CLI.Commands.NodesTest)`.
+Sin fijar semilla aparece en ~1 de cada 5. Pasa en solitario y falla en la suite
+completa. **Es de la base y sigue siendo de la base**: identico antes y despues
+con la misma semilla. Es el "septimo intermitente" que ya mencionaba el
+entregable de F2. No lo he tocado.
+
+---
+
+## 9 · Lo que NO he verificado
+
+Con nombre, como pidiste:
+
+1. **El CI.** No he ejecutado `.github/workflows/ci.yml`. Ni el lint, ni el
+   compile & test, ni el dialyzer, que en el CI solo corre en `main` y en
+   `cleanup/audit-and-i18n` —esta rama no la dispara ni por push ni por PR sin
+   tocar el `if`—. Lo que he corrido son los 5 gates de `mix qa` en local.
+2. **Credo en verde.** No lo he arreglado (§5, gate 3). Sigue en rojo con los
+   mismos 15 avisos de la base.
+3. **Los 6 fallos de `Arrea.Command` y `Arrea.CLI`.** Siguen rojos. No he
+   investigated por que: no son de este trabajo y no los he tocado.
+4. **El mutante M9.** Se escapa, y el test que lo cace no existe (§7).
+5. **`mix docs`.** No he generado la documentacion; el `@doc` de `request/4` no se
+   ha visto renderizado, solo compilado.
+6. **Carga y concurrencia real.** 13 tests en un solo proceso, sin `async: true` y
+   sin presion. El comportamiento bajo peticiones simultaneas desde muchos procesos
+   (que es el caso de Candil fase 5) **no esta medido**. En particular: no he
+   medido si dos peticiones simultaneas al mismo worker se responden con el `ref`
+   correcto, y el unico test de `ref` es secuencial.
+7. **El fallo de `Arrea.Queue` (§8.1)**: sin medir de forma reproducible bajo
+   concurrencia; la medicion de §8.1 es de un solo proceso.
+8. **Sin commit, sin push, sin PR**, como pediste. El arbol esta en la rama
+   `cierre-arrea` con `lib/arrea/bulkhead.ex` y
+   `lib/arrea/worker.ex` modificados y `test/arrea/worker_request_test.exs` sin
+   seguimiento.
+9. **Este `deliverable.md` sustituye al de F2 en el arbol de trabajo**, porque
+   me dijiste que escribiera aqui. **No se ha perdido nada**: el de F2 esta
+   commiteado en `7b46e93` y se saca con `git show 7b46e93:deliverable.md`.
+   Lo que no he hecho (y no hago sin que me lo digas) es el commit de este.
+
+---
+
+## 10 · Que cambia, en dos lineas
+
+**Dialyzer a cero** arreglando el unico spec que estaba mal (`safe_call/2`), mas
+el tipo publico `status()`, que no declaraba el `:available` que su propia funcion
+devolvia. Sin `no_warn`, sin tocar la logica.
+
+**`Worker.request/4`**: la peticion entra por la cola que el worker ya sirve, con
+su prioridad y su peso, y la respuesta sale cuando le toca — con `ref` propio,
+con plazo, y distinguiendo "no habia worker" de "el worker se llevo tu pregunta".

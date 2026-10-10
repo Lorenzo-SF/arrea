@@ -56,8 +56,23 @@ defmodule Arrea.Bulkhead do
           max_concurrent: pos_integer(),
           active: non_neg_integer(),
           accepted: non_neg_integer(),
-          rejected: non_neg_integer()
+          rejected: non_neg_integer(),
+          available: integer()
         }
+
+  @typedoc """
+  Lo que el GenServer contesta, mas `:not_found` cuando no esta registrado.
+
+  Se declara aqui, y no en cada sitio, porque el patron es el mismo en los
+  tres `safe_call`: sin este tipo, el cuerpo se deduce como `term()` y
+  dialyzer no puede probar que el `case` de `run/3` es exhaustivo.
+  """
+  @type reply ::
+          :ok
+          | :full
+          | {:available, integer()}
+          | {:status, status()}
+          | :not_found
 
   @doc """
   Starts a bulkhead with `max_concurrent` concurrent slots.
@@ -272,7 +287,13 @@ defmodule Arrea.Bulkhead do
     end
   end
 
-  @spec safe_call(atom(), atom()) :: term() | :not_found
+  # El segundo argumento NO es un `atom()`: `run/3` llama con `{:acquire, weight}`,
+  # que es una tupla. El cuerpo acepta cualquier peticion y la pasa tal cual al
+  # GenServer, de modo que era el `@spec` el que estaba mal, no el codigo. Y de
+  # ahi salian en cascada los dos `no_return`: al declarar `term()`, dialyzer no
+  # podia probar que el `case` de `run/3` es exhaustivo y avisaba de que la
+  # funcion se caia. Un contrato honesto arregla los cuatro de una vez.
+  @spec safe_call(atom(), term()) :: reply()
   defp safe_call(name, request) do
     case Registry.lookup(Arrea.Bulkhead.Registry, name) do
       [{pid, _}] ->
