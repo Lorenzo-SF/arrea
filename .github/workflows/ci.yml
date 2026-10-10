@@ -20,7 +20,7 @@ jobs:
     name: Lint & Security
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Arrea depends on alaja via GitHub. Convert SSH to HTTPS for CI.
       - name: Fix git SSH → HTTPS for dependencies
@@ -58,7 +58,7 @@ jobs:
     name: Compile & Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install OTP & Elixir
         uses: erlef/setup-beam@v1
@@ -110,7 +110,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/cleanup/audit-and-i18n'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install OTP & Elixir
         uses: erlef/setup-beam@v1
