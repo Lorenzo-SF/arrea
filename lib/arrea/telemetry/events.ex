@@ -53,6 +53,12 @@ defmodule Arrea.Telemetry.Events do
   ### RateLimiter
   - `[:arrea, :rate_limiter, :allowed]` — Tokens were consumed
   - `[:arrea, :rate_limiter, :denied]` — Request denied (bucket empty)
+
+  ### Resource
+  - `[:arrea, :resource, :acquired]` — A reservation was committed
+  - `[:arrea, :resource, :released]` — A reservation was given back
+  - `[:arrea, :resource, :rejected]` — Asked and refused (the cost did not fit)
+  - `[:arrea, :resource, :unknown_cost]` — Refused: nobody declared a cost
   """
 
   @typedoc """
@@ -81,6 +87,22 @@ defmodule Arrea.Telemetry.Events do
           name: atom(),
           capacity: pos_integer(),
           n: pos_integer()
+        }
+
+  @typedoc """
+  Metadata for `[:arrea, :resource, *]` events.
+
+  `holders` counts the reservations, not their weight: a resource holding one
+  4 GB model has one holder and 4096 used, and a metric that reported "4" as
+  either of those would be describing a different resource. `used` is the hard
+  axis, in whole megabytes; `quota_used` is the soft one, in policy units.
+  """
+  @type resource_metadata :: %{
+          name: atom(),
+          capacity: non_neg_integer(),
+          used: non_neg_integer(),
+          quota_used: number(),
+          holders: non_neg_integer()
         }
 
   # Worker events
@@ -233,6 +255,26 @@ defmodule Arrea.Telemetry.Events do
   @spec emit_rate_limiter(atom(), rate_limiter_metadata()) :: :ok
   def emit_rate_limiter(event, metadata) do
     :telemetry.execute([:arrea, :rate_limiter, event], %{}, metadata)
+    :ok
+  end
+
+  @doc """
+  Emits a resource event with typed metadata.
+
+  ## Example
+
+      iex> Arrea.Telemetry.Events.emit_resource(:rejected, %{
+      ...>   name: :cuda0,
+      ...>   capacity: 16_384,
+      ...>   used: 14_336,
+      ...>   quota_used: 0.85,
+      ...>   holders: 2
+      ...> })
+      :ok
+  """
+  @spec emit_resource(atom(), resource_metadata()) :: :ok
+  def emit_resource(event, metadata) do
+    :telemetry.execute([:arrea, :resource, event], %{}, metadata)
     :ok
   end
 end
