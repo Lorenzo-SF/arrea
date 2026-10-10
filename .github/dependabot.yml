@@ -28,18 +28,13 @@
 #
 # ## Los dos intervalos
 #
-# - `mix`, semanal: lo que de verdad se compila. Una semana es bastante para un
-#   ecosistema donde se publica a diario. **NO `hex`**: ese NO es el nombre del
-#   ecosistema en Dependabot, es `mix`, como el gestor de dependencias. GitHub
-#   rechaza el fichero ENTERO si el nombre no esta en su lista, y con `hex` lo
-#   hacia: no habia avisos de seguridad y no habia nada que lo dijera. El error
-#   solo sale en un check que nace con el fichero, asi que fue invisible hasta
-#   que el fichero existio. Es el mismo bug que ya se corrigio en candil.
+# - `hex`, semanal: lo que de verdad se compila. Una semana es bastante para un
+#   ecosistema donde se publica a diario.
 # - `github-actions`, mensual: las acciones cambian poco y romperlas cuesta un
 #   CI entero.
 version: 2
 updates:
-  - package-ecosystem: "mix"
+  - package-ecosystem: "hex"
     directory: "/"
     schedule:
       interval: "weekly"

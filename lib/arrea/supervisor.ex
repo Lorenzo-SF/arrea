@@ -12,10 +12,9 @@ defmodule Arrea.Supervisor do
       3. Registry (Arrea.Bulkhead.Registry)       — Bulkheads
       4. Registry (Arrea.RateLimiter.Registry)    — Rate limiters
       5. Registry (Arrea.Pool.Registry)           — Pools
-      6. Registry (Arrea.Resource.Registry)        — Resources
-      7. Arrea.Monitor                            — Depende de los registries
-      8. Arrea.Leader                             — Depende de Monitor y registries
-      9. Arrea.WorkerSupervisor                   — Depende de Leader y registries
+      6. Arrea.Monitor                            — Depende de los registries
+      7. Arrea.Leader                             — Depende de Monitor y registries
+      8. Arrea.WorkerSupervisor                   — Depende de Leader y registries
 
   Con `:rest_for_one`:
   - Si falla un **Registry** → reinicia todo (raro; los registries son muy estables)
@@ -46,9 +45,6 @@ defmodule Arrea.Supervisor do
       {Registry, keys: :unique, name: Arrea.Bulkhead.Registry},
       {Registry, keys: :unique, name: Arrea.RateLimiter.Registry},
       {Registry, keys: :unique, name: Arrea.Pool.Registry},
-      # Los resources se registran en el suyo. Va antes del Monitor porque el
-      # Monitor los cuenta entre los procesos vivos, igual que a los demas.
-      {Registry, keys: :unique, name: Arrea.Resource.Registry},
       Arrea.Monitor,
       Arrea.Leader,
       {DynamicSupervisor, name: Arrea.WorkerSupervisor, strategy: :one_for_one}
