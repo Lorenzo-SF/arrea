@@ -12,12 +12,28 @@ defmodule Arrea.Worker do
      handled), the notification was already emitted before `{:stop, ...}` and
      `terminate` does not duplicate it.
 
+  ## Avisar y preguntar: son dos operaciones, no una
+
+  `send_message/2` **avisa y sigue**: no espera, y a proposito —quien manda un
+  aviso no deberia bloquear esperando un acuse que nadie pidio. `request/4` es la
+  otra mitad: pregunta y **espera la respuesta**.
+
+  La peticion de `request/4` no es un `GenServer.call` al worker. Viaja por la
+  cola que el worker ya sirve (`queues: [...]`), como una entrada mas, con su
+  prioridad y su peso; la respuesta sale cuando le toca a esa entrada, y no
+  antes. Un `call` se colaria por delante de la cola y, mientras el que espera
+  sigue esperando, el worker dejaria de despachar para los demas.
+
   ## Formatos de mensaje aceptados
 
   `Worker.send_message/2` acepta:
   - Mapas con clave `:type` — mensaje estructurado genérico: `%{type: :my_event, ...}`
   - Tupla de enrutamiento: `{:send_to_worker, target_worker_id, payload}` — reenvía
     el `payload` al worker identificado por `target_worker_id`.
+
+  `Worker.request/4` acepta un mensaje opaco, como cualquier payload de cola: por
+  convención es una funcion de aridad cero, y **su valor de retorno es la
+  respuesta**.
 
   ## Política de errores
 
@@ -30,6 +46,9 @@ defmodule Arrea.Worker do
       Arrea.Worker.send_message(:worker_1, %{type: :ping})
       Arrea.Worker.send_message(:worker_1, {:send_to_worker, :worker_2, %{type: :data, value: 42}})
       {:ok, state} = Arrea.Worker.get_state(:worker_1)
+
+      # Pregunta y respuesta, por la cola que el worker ya sirve:
+      {:ok, respuesta} = Arrea.Worker.request(:worker_1, :cola_1, fn -> preguntar() end)
   """
 
   use GenServer, restart: :temporary
@@ -118,6 +137,158 @@ defmodule Arrea.Worker do
       [{pid, _}] -> GenServer.cast(pid, {:message, message})
     end
   end
+
+  # Ni inventado ni raro: 30_000 es el unico plazo por defecto que ya tiene
+  # Arrea (`Arrea.Command` y `Arrea.Leader.CommandRunner` usan el mismo), y dos
+  # numeros distintos para lo mismo serian dos politicas. Quien sepa que necesita
+  # otra cosa lo dice por `:timeout`; este modulo no decide por su cuenta.
+  @default_request_timeout 30_000
+
+  @doc """
+  Pregunta al worker y **espera la respuesta**. Es la otra mitad de
+  `send_message/2`, y no su sustituto.
+
+  ## Por que NO es un `GenServer.call`
+
+  Un `call` al worker mete la peticion por delante de su cola: el worker
+  contesta eso, ejecuta lo que tenga que ejecutar, y solo entonces mira lo
+  siguiente. Dos cosas se rompen: la prioridad y el peso dejan de contar para
+  esa peticion, y quien esta esperando manda sobre el despacho de todos los
+  demas mientras espera.
+
+  Aqui la peticion es **una entrada de cola mas**: entra por `queue`, con la
+  prioridad y el peso que se le digan, la sirve el worker cuando le toca segun
+  las mismas reglas que todo lo demas, y solo entonces sale la respuesta. Si el
+  que pregunta se va, el worker no se queda esperandole: contesta al buzon y
+  sigue.
+
+  ## El mensaje
+
+  El mensaje es opaco, como cualquier payload de cola. Por convencion —y solo
+  por convencion— es una funcion de aridad cero, y **su valor de retorno es la
+  respuesta**. Arrea no mira dentro del mensaje mas alla de intentar ejecutarlo,
+  igual que en `send_message/2` no mira dentro del aviso.
+
+  Lo que no sea ejecutable se responde `{:error, :not_executable}` en cuanto el
+  worker lo recoge, no al vencer el plazo.
+
+  ## Opciones
+
+    - `:timeout` — ms de espera. Por defecto `#{@default_request_timeout}`. `:infinity` esta permitido
+    - `:priority` — la de la entrada. Por defecto `0`
+    - `:weight` — lo que ocupa del presupuesto del worker. Por defecto `1`
+
+  ## Devoluciones
+
+    - `{:ok, result}` — el worker ejecuto el mensaje y devolvio esto
+    - `{:error, :worker_not_found}` — no hay ningun worker con ese id ahora mismo
+    - `{:error, :queue_not_found}` — la cola no existe
+    - `{:error, :not_owner}` — la cola tiene dueño y el que pregunta no es
+    - `{:error, :not_executable}` — el mensaje no era una funcion de aridad cero
+    - `{:error, {:exception, e}}` / `{:error, {kind, reason}}` — el mensaje fallo
+    - `{:error, {:worker_down, reason}}` — el worker se fue mientras esperaba
+    - `{:error, :timeout}` — se cumplio el plazo
+
+  `:worker_down` **no** es `:worker_not_found`, y no por gusto. Uno nunca
+  existio; el otro existia, se llevo la peticion dentro y se fue. Decirle al
+  primero "no lo encuentro" cuando tu pregunta ya se ha perdido con el worker
+  es la misma mentira que `send_message/2` cometia antes: una respuesta que no
+  distingue entre "no habia nadie" y "se han llevado tu trabajo".
+
+  ## Lo que la respuesta no puede deshacer
+
+  Al vencer el plazo, la entrada **sigue en la cola**. No hay cancelacion:
+  otro worker que sirva esa cola puede cogerla y ejecutarla, y su respuesta
+  llegara a un `ref` que ya no mira nadie. Quien espera puede marcharse; lo que
+  hay en la cola, no.
+
+  ## Examples
+
+      {:ok, respuesta} = Worker.request(:worker_1, :cola_1, fn -> preguntar() end)
+      {:error, :timeout} = Worker.request(:worker_1, :cola_1, fn -> tardar() end, timeout: 100)
+  """
+  @spec request(atom(), atom(), term(), keyword()) :: {:ok, term()} | {:error, term()}
+  def request(worker_id, queue, message, opts \\ []) do
+    case Registry.lookup(Arrea.Registry, worker_id) do
+      [] ->
+        {:error, :worker_not_found}
+
+      [{pid, _}] ->
+        # El monitor va ANTES que el empujon: si el worker se muere entre los
+        # dos, el `DOWN` ya esta en el buzon y se responde igual. Al reves, la
+        # peticion se quedaria esperando a un plazo que no va a llegar nunca.
+        monitor = Process.monitor(pid)
+        ref = make_ref()
+
+        push_opts = [
+          priority: Keyword.get(opts, :priority, 0),
+          weight: Keyword.get(opts, :weight, 1),
+          from: self()
+        ]
+
+        case push_request(queue, {:arrea_request, ref, message}, push_opts) do
+          :ok ->
+            await_reply(ref, monitor, pid, Keyword.get(opts, :timeout, @default_request_timeout))
+
+          {:error, reason} ->
+            abandon(monitor, {:error, reason})
+        end
+    end
+  end
+
+  # Empuja la peticion como una entrada de cola MAS, y devuelve lo que devolvio
+  # la cola. `Queue.push/3` habla con un `via` de Registry: si la cola no existe,
+  # el `call` se va con `:noproc`, y eso se traduce al motivo que de verdad es.
+  # Un `GenServer.call` sin traducir seria la misma mentira de `send_message/2`,
+  # pero con la forma de un crash en el proceso de quien pregunta.
+  @spec push_request(atom(), {:arrea_request, reference(), term()}, keyword()) ::
+          :ok | {:error, term()}
+  defp push_request(queue, payload, opts) do
+    Queue.push(queue, payload, opts)
+  catch
+    :exit, {:noproc, _} -> {:error, :queue_not_found}
+    :exit, :noproc -> {:error, :queue_not_found}
+  end
+
+  # El `ref` es el mismo truco que el de `GenServer.call`: un `make_ref` por
+  # peticion, y la respuesta se acepta solo si viene con ESE ref. Por eso la
+  # respuesta de una peticion que ya ha vencido no puede colarse como si fuera
+  # la de otra, aunque las dos esten en el mismo proceso.
+  @spec await_reply(reference(), reference(), pid(), timeout()) ::
+          {:ok, term()} | {:error, term()}
+  defp await_reply(ref, monitor, pid, timeout) do
+    receive do
+      {:arrea_worker_reply, ^ref, reply} ->
+        abandon(monitor, reply)
+
+      {:DOWN, ^monitor, :process, ^pid, reason} ->
+        # El worker se ha ido con la peticion dentro. No es `:worker_not_found`:
+        # ese es el de `send_message/2`, el de uno que no estaba.
+        {:error, {:worker_down, reason}}
+    after
+      timeout -> abandon(monitor, {:error, :timeout})
+    end
+  end
+
+  @spec abandon(reference(), {:ok, term()} | {:error, term()}) :: {:ok, term()} | {:error, term()}
+  defp abandon(monitor, reply) do
+    # `[:flush]` y no un `demonitor` a secas: sin el, un `DOWN` del worker que
+    # muere en este mismo instante se queda en el buzon de quien ya termino y
+    # le sale como un mensaje suelto en la siguiente receive.
+    Process.demonitor(monitor, [:flush])
+    reply
+  end
+
+  @spec run_request(term()) :: {:ok, term()} | {:error, term()}
+  defp run_request(fun) when is_function(fun, 0) do
+    {:ok, fun.()}
+  rescue
+    e -> {:error, {:exception, e}}
+  catch
+    kind, reason -> {:error, {kind, reason}}
+  end
+
+  defp run_request(_other), do: {:error, :not_executable}
 
   @doc """
   Obtiene el estado actual del worker.
@@ -278,6 +449,17 @@ defmodule Arrea.Worker do
   # de aridad cero, como las tareas de siempre; si no lo es, se cuenta como
   # fallo de esa entrada y se sigue. Arrea NO mira dentro del payload mas alla
   # de intentar ejecutarlo.
+  #
+  # Una peticion de `request/4` es la excepcion que confirma la regla: el
+  # payload es `{:arrea_request, ref, mensaje}` y su valor de retorno NO se tira,
+  # porque ES la respuesta. El `ref` viaja dentro del payload porque la cola es
+  # opaca: quien contesta no puede saber a quien pertenece si no viaja con el.
+  defp execute_queue_entry(%{payload: {:arrea_request, ref, message}, from: from}, state) do
+    send(from, {:arrea_worker_reply, ref, run_request(message)})
+    Process.send_after(self(), :poll, state.poll_interval)
+    {:noreply, %{state | status: :idle}}
+  end
+
   defp execute_queue_entry(%{payload: payload, from: from} = _entry, state) do
     case payload do
       fun when is_function(fun, 0) ->
