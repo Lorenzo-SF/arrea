@@ -1,6 +1,123 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to Arrea will be documented in this file.
+
+## [4.0.0] — 2026-10-10
+
+El salto a 4 no es decorativo: hay **dos cambios que pueden romper a quien
+dependa de hoy**, y estan los dos explicados abajo.
+
+### Changed — BREAKING
+
+- **`Queue` sirve ahora la prioridad mas ALTA primero. Antes servia la mas
+  baja, y su `@moduledoc` decia lo contrario desde siempre.** Medido antes del
+  arreglo: `push(baja: 1, media: 5, alta: 9)` servia `1, 5, 9`. La causa es que
+  `entries` es un `:gb_tree` con clave `{priority, sequence}` y **`:gb_trees`
+  ordena ascendente**; la clave ahora es `{-priority, sequence}`.
+
+  El `requeue(front: true)` cambia con ella: hacia `priority + 1` para
+  "adelantarse a su propia banda", lo cual con el orden viejo mandaba la
+  entrada **al final**. Los dos fallos tenian la misma causa.
+
+- **La topologia de supervision cambia.** El `Arrea.Resource.Registry` se
+  registra **antes** de `Arrea.Monitor` en una cadena `:rest_for_one`, asi que
+  si ese registro falla se reinician tambien Monitor, Leader y
+  WorkerSupervisor. Antes no habia nada que reiniciar ahi. Es defendible —los
+  registries son estables— pero por eso va en BREAKING y no en Added.
+
+### Added
+
+- **`Arrea.Resource`**: contabilidad de recursos en **GB**, con identidad por
+  titular, eleccion de un conjunto y un motivo con numeros.
+  - `capacity` en **megas enteros**: aritmetica exacta, sin tolerancia.
+  - `quota` decimal, con dos rechazos distinguibles (`:insufficient_capacity` y
+    `:quota_exceeded`). Es un **numero con nombre, no una politica**: por
+    defecto `:infinity`.
+  - `release/2` devuelve la reserva de **ese** titular, con `===` y no `==`:
+    en Erlang `1 == 1.0` es verdad.
+  - Sin persistencia. `instances.json` es de Candil, no de Arrea.
+  - Es la fase 2 del plan de Candil, la pieza que faltaba.
+- **`Worker.request/4`**: RPC dirigido, que es lo que le faltaba a Arrea para
+  la fase 5 de Candil. **Entra por la cola**, con su prioridad y su peso, y no
+  como un `GenServer.call` al worker, que pararia la cola. `send_message/2`
+  **sigue siendo un `cast`**: un aviso no espera.
+  - Plazo de **30 000 ms**, tomado de `Arrea.Command`, no inventado.
+  - Worker muerto mientras se espera -> **`{:worker_down, reason}`**, no
+    `:not_found`: uno que estaba y se ha ido no es uno que nunca existio.
+  - Cola **explicita** en la aridad, porque elegirla en silencio seria la misma
+    clase de mentira.
+
+### Fixed
+
+- **6 errores de dialyzer que tenian `main` en rojo, y eran cuatro etiquetas.**
+  `@spec safe_call(atom(), atom())` recibia una tupla (`{:acquire, weight}`), y
+  de ahi caian en cascada dos `no_return` y un `invalid_contract`. **Ningun
+  fallo de logica.** Dialyzer a cero.
+- Los tests de prioridad de la cola **no comprobaban el orden**: reclamaban
+  tres entradas a una variable que no volvian a mirar. La forma de un test
+  riguroso y el contenido de uno que no comprueba nada. El de
+  `requeue(front: true)` igual.
+- Dependabot: `package-ecosystem: "hex"` no existe, es `mix`. Con `hex`,
+  GitHub rechazaba el fichero entero y **no habia avisos de seguridad**.
+
+### Changed — BREAKING
+
+- **`Queue` sirve ahora la prioridad mas ALTA primero. Antes servia la mas
+  baja, y su `@moduledoc` decia lo contrario desde siempre.**
+  Medido antes del arreglo: `push(baja: 1, media: 5, alta: 9)` servia
+  `1, 5, 9`. La causa era que `entries` es un `:gb_tree` con clave
+  `{priority, sequence}` y **`:gb_trees` ordena ascendente**; la clave ahora
+  es `{-priority, sequence}`.
+
+  Lo que dependa del orden actual cambia de golpe. **El `requeue(front: true)`
+  tambien cambia**: hacia `priority + 1` para "adelantarse a su propia banda",
+  lo cual con el orden viejo mandaba la entrada **al final** de esa banda.
+  Los dos fallos tenian la misma causa.
+
+- **La topologia de supervision cambia.** El `Registry` de
+  `Arrea.Resource.Registry` se registra **antes** de `Arrea.Monitor` en una
+  cadena `:rest_for_one`, asi que si ese registro falla se reinician tambien
+  Monitor, Leader y WorkerSupervisor. Antes no habia nada que reiniciar ahi.
+
+  Es defendible —los registries son estables y no se rompen— pero es un cambio
+  de arbol de supervision y por eso esta en la seccion de BREAKING y no
+  escondida en Added.
+
+### Added
+
+- **`Arrea.Resource`**: contabilidad de recursos en **GB**, con identidad por
+  titular, eleccion de un conjunto, y un motivo con numeros.
+  - `capacity` en **megas enteros**, aritmetica exacta y sin tolerancia.
+  - `quota` decimal, con dos rechazos distinguibles
+    (`:insufficient_capacity` y `:quota_exceeded`). Es un **numero con
+    nombre, no una politica**: por defecto `:infinity`.
+  - `release/2` devuelve la reserva de **ese** titular (`===`, no `==`:
+    en Erlang `1 == 1.0`).
+  - Sin persistencia. `instances.json` es de Candil, no de Arrea.
+  - Fases 2 del plan de Candil: esta es la pieza que faltaba.
+- **`Worker.request/4`**: RPC dirigido, que es lo que le faltaba a Arrea para
+  la fase 5 de Candil. **Entra por la cola** —con su prioridad y su peso— y
+  no como un `GenServer.call` al worker, que pararia la cola.
+  `send_message/2` **sigue siendo un `cast`** y no se toca: un aviso no
+  espera.
+  - Plazo por defecto **30 000 ms**, tomado de `Arrea.Command`.
+  - Worker muerto mientras se espera -> **`{:worker_down, reason}`**, no
+    `:not_found`. Un worker que estaba y se ha ido no es lo mismo que uno que
+    nunca existio.
+  - Cola **explicita** en la aridad, porque elegirla en silencio seria la
+    misma clase de mentira.
+
+### Fixed
+
+- **6 errores de dialyzer que tenian `main` en rojo, y eran cuatro
+  etiquetas.** `@spec safe_call(atom(), atom())` recibia una tupla
+  (`{:acquire, weight}`); de ahi caian en cascada dos `no_return` y un
+  `invalid_contract`. **Ningun fallo de logica.** Dialyzer a cero.
+- Los tests de prioridad de la cola, que **no comprobaban el orden**:hmann
+  reclamaban tres entradas a una variable que no volvian a mirar. Un test con
+  forma de rigor y sin una sola asercion. El de `requeue(front: true)` igual.
+- Dependabot: `package-ecosystem: "hex"` no existe; es `mix`. Con `hex`,
+  GitHub rechazaba el fichero entero y **no habia avisos de seguridad**.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).

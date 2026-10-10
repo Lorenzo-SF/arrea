@@ -4,7 +4,7 @@ defmodule Arrea.MixProject do
   def project do
     [
       app: :arrea,
-      version: "3.1.0",
+      version: "4.0.0",
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
