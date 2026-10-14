@@ -276,7 +276,17 @@ defmodule Arrea.CircuitBreaker do
           end
 
         :closed ->
-          %{state | successes: state.successes + 1}
+          # Aqui es donde `failures: 0` faltaba, y no era decorativo: sin el,
+          # el contador de fallos era **acumulado**, no consecutivo. Dos fallos,
+          # un exito y un tercero abrian el circuito, con un umbral de 3 — y el
+          # `@moduledoc` de este modulo dice "consecutive failures threshold",
+          # dos veces.
+          #
+          # Un corteprotecta que abre con un destino que falla 1 de cada 3 no
+          # protege: apaga. Y como cada peticion logica reintenta hasta cuatro
+          # veces (`Apero.Retry`), un destino que responde 503 se comia el
+          # umbral entero en una sola peticion.
+          %{state | successes: state.successes + 1, failures: 0}
 
         :open ->
           new = %{state | state: :closed, failures: 0, successes: 0, probe_in_progress: false}

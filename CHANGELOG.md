@@ -2,6 +2,29 @@
 
 All notable changes to Arrea will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- **El umbral no era de fallos consecutivos, y el `@moduledoc` lo prometia dos
+  veces.** Dice *"consecutive failures threshold"* al describir `:open`, y
+  *"max(1, threshold / 2) **consecutive** successes"* al describir el cierre
+  desde `:half_open`. La segunda se cumplia; la primera no:
+  `handle_cast(:success, state)` hacia `%{state | successes: state.successes +
+  1}` y **no tocaba `failures`**, asi que el contador era acumulado desde la
+  ultima apertura, no consecutivo.
+
+  Medido con umbral 3, secuencia `failure, failure, success, failure`:
+  abria el circuito. No son tres fallos seguidos. Consecuencia: un destino que
+  falla 1 de cada 3 peticiones abre igual — que es el fallo clasico de un
+  corteprotecta mal sincronizado, porque protege de un destino sano y lento.
+  Y como cada peticion logica reintenta hasta cuatro veces, un destino que
+  responde 503 se comia el umbral entero en una sola peticion.
+
+  El modelo de referencia de `circuit_breaker_property_test.exs` **replicaba
+  el bug** — por eso pasaba en verde mientras el modulo no cumplia lo que
+  prometia. Tambien está corregido.
+
 ## [4.0.0] — 2026-10-10
 
 El salto a 4 no es decorativo: hay **dos cambios que pueden romper a quien

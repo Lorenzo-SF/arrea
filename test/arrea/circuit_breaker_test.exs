@@ -34,6 +34,28 @@ defmodule Arrea.CircuitBreakerTest do
     assert CircuitBreaker.get_state(test_id) == :closed
   end
 
+  test "el umbral es de fallos CONSECUTIVOS, como dice el @moduledoc", %{test_id: test_id} do
+    # El `@moduledoc` lo dice dos veces: *"consecutive failures threshold"* y
+    # *"max(1, threshold / 2) **consecutive** successes"*. La segunda si se
+    # cumple; esta es la que no.
+    #
+    # Dos fallos, un exito y un tercero no son tres fallos seguidos: el contador
+    # tiene que volver a cero con el exito.
+    CircuitBreaker.failure(test_id)
+    CircuitBreaker.failure(test_id)
+    CircuitBreaker.success(test_id)
+
+    assert CircuitBreaker.get_state(test_id) == :closed
+
+    CircuitBreaker.failure(test_id)
+    assert CircuitBreaker.get_state(test_id) == :closed, "el exito no limpio el contador"
+
+    # Y a la tercera seguida si abre, que es lo que promete el umbral.
+    CircuitBreaker.failure(test_id)
+    CircuitBreaker.failure(test_id)
+    assert CircuitBreaker.get_state(test_id) == :open
+  end
+
   test "transitions to open after threshold failures", %{test_id: test_id} do
     assert CircuitBreaker.get_state(test_id) == :closed
 
