@@ -94,10 +94,21 @@ defmodule Arrea.CircuitBreakerPropertyTest do
 
   defp apply_closed(model, op) do
     case op do
-      :failure -> {fail(model), :no_call}
-      :success -> {%{model | successes: model.successes + 1}, :no_call}
-      :call_ok -> {%{model | successes: model.successes + 1}, :allowed}
-      :call_fail -> {fail(model), :allowed}
+      :failure ->
+        {fail(model), :no_call}
+
+      # `failures: 0` en los dos successes, y no es un detalle: el `@moduledoc`
+      # del breaker dice "consecutive failures threshold", dos veces. Este
+      # modelo replicaba el contador **acumulado** —el bug— y por eso pasaba
+      # en verde mientras el modulo no cumplia lo que prom dia.
+      :success ->
+        {%{model | successes: model.successes + 1, failures: 0}, :no_call}
+
+      :call_ok ->
+        {%{model | successes: model.successes + 1, failures: 0}, :allowed}
+
+      :call_fail ->
+        {fail(model), :allowed}
     end
   end
 
