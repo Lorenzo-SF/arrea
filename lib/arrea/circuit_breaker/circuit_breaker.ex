@@ -139,7 +139,7 @@ defmodule Arrea.CircuitBreaker do
       iex> CircuitBreaker.call(:my_breaker, fn -> raise "boom" end)
       {:error, :execution_failed}
   """
-  @spec call(atom(), (-> term()), keyword()) :: {:ok, term()} | {:error, term()}
+  @spec call(name(), (-> term()), keyword()) :: {:ok, term()} | {:error, term()}
   def call(name, fun, _opts \\ []) when is_function(fun, 0) do
     case safe_call(name, :get_state_and_check) do
       {:allowed, _state} ->
@@ -170,7 +170,7 @@ defmodule Arrea.CircuitBreaker do
 
   Returns `:closed` if the breaker is not registered.
   """
-  @spec get_state(atom()) :: state()
+  @spec get_state(name()) :: state()
   def get_state(name) do
     case Registry.lookup(Arrea.CircuitBreaker.Registry, name) do
       [{pid, _}] -> GenServer.call(pid, :get_state)
@@ -181,13 +181,13 @@ defmodule Arrea.CircuitBreaker do
   @doc """
   Notifies the circuit breaker of a successful execution.
   """
-  @spec success(atom()) :: :ok
+  @spec success(name()) :: :ok
   def success(name), do: GenServer.cast(via_tuple(name), :success)
 
   @doc """
   Notifies the circuit breaker of an execution failure.
   """
-  @spec failure(atom()) :: :ok
+  @spec failure(name()) :: :ok
   def failure(name), do: GenServer.cast(via_tuple(name), :failure)
 
   # ── GenServer callbacks ──────────────────────────────────────────────────
@@ -342,7 +342,7 @@ defmodule Arrea.CircuitBreaker do
 
   # ── Helpers privados ─────────────────────────────────────────────────────
 
-  @spec safe_call(atom(), atom()) :: {:allowed, State.t()} | {:blocked, atom()} | :not_found
+  @spec safe_call(name(), atom()) :: {:allowed, State.t()} | {:blocked, atom()} | :not_found
   defp safe_call(name, request) do
     case Registry.lookup(Arrea.CircuitBreaker.Registry, name) do
       [{pid, _}] ->
@@ -360,6 +360,14 @@ defmodule Arrea.CircuitBreaker do
   end
 
   @spec via_tuple(atom()) :: {:via, Registry, {Arrea.CircuitBreaker.Registry, atom()}}
+  # El nombre va en un `{:via, Registry, {_, name}}`, y un `via` de Registry
+  # acepta **cualquier termino**. Por eso los `@spec` de este modulo dicen
+  # `name() :: term()` y no `atom()`: decir `atom()` era una restriccion que la
+  # implementacion no tenia, y lo unico que hacia era impedir compilar al que
+  # usara un string —que es justo lo que hace Candil para no crear atomos con
+  # URLs.
+  @type name :: term()
+
   defp via_tuple(name), do: {:via, Registry, {Arrea.CircuitBreaker.Registry, name}}
 
   @spec emit(atom(), State.t()) :: :ok

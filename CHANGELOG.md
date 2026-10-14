@@ -6,6 +6,24 @@ All notable changes to Arrea will be documented in this file.
 
 ### Fixed
 
+- **Los `@spec` del circuit breaker decian `atom()` y el codigo no.** El
+  nombre va en un `{:via, Registry, {_, name}}`, y ahi cabe **cualquier
+  termino**: lo acepta la implementacion desde siempre y lo prohibia el tipo.
+  Medido el 2026-10-14 desde Candil: dialyzer rechazaba un circuito cuyo
+  nombre fuera un string, con cuatro `invalid_contract`.
+
+  No es cosmetico. Candil usa strings **a proposito** —un atomo por URL seria
+  crear atomos con datos de fuera, que es justo lo que
+  `String.to_existing_atom/1` evita en el otro lado— y no podia hacerlo sin que
+  esta dependencia dijera la verdad. Con el `@spec` viejo, la unica forma de
+  tener un circuito por destino era volver a crear atomos, o aceptarlo como un
+  unico circuito para todo.
+
+  Cuatro `@spec` (`call/3`, `get_state/1`, `success/1`, `failure/1`) y el tipo
+  `name :: term()`, con el porque escrito al lado del `via_tuple/1`. Y un test
+  que arranca un circuito con un string, lo abre con dos fallos y comprueba que
+  la siguiente llamada da `{:error, :circuit_open}` sin ejecutar la funcion.
+
 - **El umbral no era de fallos consecutivos, y el `@moduledoc` lo prometia dos
   veces.** Dice *"consecutive failures threshold"* al describir `:open`, y
   *"max(1, threshold / 2) **consecutive** successes"* al describir el cierre
