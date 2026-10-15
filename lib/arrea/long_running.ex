@@ -159,6 +159,20 @@ defmodule Arrea.LongRunning do
 
   @doc """
   Returns a snapshot of the current state for the given id.
+
+  `os_pid` is the pid of the **operating system** process —the one `ps`,
+  `kill`, `nvidia-smi` and cgroups know— and not the pid of this GenServer.
+  The two are different processes: the BEAM pid belongs to the VM, the OS pid to
+  the thing that is actually burning CPU and holding VRAM.
+
+  It is here, and not as a separate function, because it is the same fact the
+  snapshot already reports in `running` —"there is a process" vs "which one"—,
+  and because `stop/1` already needs exactly this number to kill it. Exposing
+  it only saves a consumer from going around the module to find out which
+  process it is talking about.
+
+  `nil` means the port is gone but the port's exit has not been processed yet.
+  Once it has, the GenServer stops and `state/1` answers `{:error, :not_found}`.
   """
   @spec state(id()) :: {:ok, map()} | {:error, :not_found}
   def state(id) do
@@ -233,6 +247,7 @@ defmodule Arrea.LongRunning do
       binary: state.binary,
       args: state.args,
       running: state.port != nil,
+      os_pid: os_pid(state.port),
       uptime_ms: System.monotonic_time(:millisecond) - state.started_at,
       buffer_size: byte_size(state.buffer)
     }
@@ -305,6 +320,18 @@ defmodule Arrea.LongRunning do
 
       _ ->
         :ok
+    end
+  end
+
+  # El mismo `port_info` que usa `signal/2`, aqui para CONTAR en vez de para
+  # matar. `nil` con un puerto que ya no esta, que es el estado entre que el
+  # proceso muere y que el puerto avisa.
+  defp os_pid(nil), do: nil
+
+  defp os_pid(port) do
+    case :erlang.port_info(port, :os_pid) do
+      {:os_pid, pid} -> pid
+      _ -> nil
     end
   end
 
