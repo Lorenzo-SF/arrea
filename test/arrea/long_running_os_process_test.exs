@@ -56,6 +56,42 @@ defmodule Arrea.LongRunning.OsProcessTest do
 
   # Un script que escribe su pid y se queda. `exec -a` no se usa porque es de
   # bash y no de sh, y sale con 127 sin que se note por que.
+  # ── `state/1` dice que proceso es ──────────────────────────────────────────
+  #
+  # El snapshot dice `running: state.port != nil`, que es verdad y no dice nada
+  # de QUE proceso. Para quien esto importa de verdad —mandarle una senal desde
+  # fuera del BEAM, atribuirle CPU o memoria con una herramienta que no es
+  # Erlang, o entregarlo a un supervisor de procesos— el pid del BEAM no sirve:
+  # `ps`, `kill`, `nvidia-smi` y cgroups hablan el pid del SISTEMA OPERATIVO.
+  #
+  # Y el pid es justo lo que `stop/1` usa por dentro para matarlo, asi que no es
+  # un dato raro: es el mismo, solo que hacia afuera.
+
+  @tag timeout: 60_000
+  test "state/1 dice el pid del SISTEMA OPERATIVO, no el del GenServer", %{
+    tmp_dir: tmp_dir
+  } do
+    {bin, pidfile} = sleeper(tmp_dir)
+    id = {:test, :state_reports_os_pid}
+
+    {:ok, _lr} = Arrea.LongRunning.start_link(id: id, binary: bin, args: [])
+
+    # El pid lo escribe el PROCESO con su propio `$$`, o sea que viene del
+    # punto de vista de quien seraidentifyado, no del que lo lanza.
+    os_pid = wait_for_pid(pidfile)
+
+    assert {:ok, snapshot} = Arrea.LongRunning.state(id)
+
+    assert snapshot.os_pid == os_pid,
+           "state/1 dice #{inspect(snapshot.os_pid)} y el proceso es #{os_pid}"
+  end
+
+  # No hay un test del `nil`: `stop/1` y la muerte del proceso **terminan el
+  # GenServer**, asi que una vez que el proceso no esta, `state/1` responde
+  # `{:error, :not_found}` y no hay instantanea que mirar. El `nil` solo existe
+  # en el hueco entre que el proceso muere y que el puerto avisa, y ese hueco no
+  # se puede asserting sin ragarse.
+
   defp sleeper(tmp_dir) do
     bin = Path.join(tmp_dir, "sleeper-#{System.unique_integer([:positive])}")
     pidfile = Path.join(tmp_dir, "sleeper.pid")
