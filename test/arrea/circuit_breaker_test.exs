@@ -30,8 +30,51 @@ defmodule Arrea.CircuitBreakerTest do
     %{pid: pid, test_id: test_id}
   end
 
+  test "el nombre no tiene que ser un atomo" do
+    # Los `@spec` de este modulo decían `atom()`, pero la implementacion mete el
+    # nombre en un `{:via, Registry, {_, name}}`, y ahi cabe cualquier termino.
+    # El spec era una restriccion que el codigo no tenia, y lo unico que hacia
+    # era impedir compilar a quien quisiera un string —que es lo que hace Candil
+    # para no crear atomos con URLs.
+    nombre = "breaker-con-string-#{System.unique_integer([:positive])}"
+
+    {:ok, _pid} =
+      CircuitBreaker.start_link(name: nombre, threshold: 2, timeout: 5_000)
+
+    assert CircuitBreaker.get_state(nombre) == :closed
+    assert CircuitBreaker.call(nombre, fn -> :ok end) == {:ok, :ok}
+
+    CircuitBreaker.failure(nombre)
+    CircuitBreaker.failure(nombre)
+
+    assert CircuitBreaker.get_state(nombre) == :open
+    assert CircuitBreaker.call(nombre, fn -> :nunca end) == {:error, :circuit_open}
+  end
+
   test "starts in closed state", %{test_id: test_id} do
     assert CircuitBreaker.get_state(test_id) == :closed
+  end
+
+  test "el umbral es de fallos CONSECUTIVOS, como dice el @moduledoc", %{test_id: test_id} do
+    # El `@moduledoc` lo dice dos veces: *"consecutive failures threshold"* y
+    # *"max(1, threshold / 2) **consecutive** successes"*. La segunda si se
+    # cumple; esta es la que no.
+    #
+    # Dos fallos, un exito y un tercero no son tres fallos seguidos: el contador
+    # tiene que volver a cero con el exito.
+    CircuitBreaker.failure(test_id)
+    CircuitBreaker.failure(test_id)
+    CircuitBreaker.success(test_id)
+
+    assert CircuitBreaker.get_state(test_id) == :closed
+
+    CircuitBreaker.failure(test_id)
+    assert CircuitBreaker.get_state(test_id) == :closed, "el exito no limpio el contador"
+
+    # Y a la tercera seguida si abre, que es lo que promete el umbral.
+    CircuitBreaker.failure(test_id)
+    CircuitBreaker.failure(test_id)
+    assert CircuitBreaker.get_state(test_id) == :open
   end
 
   test "transitions to open after threshold failures", %{test_id: test_id} do
