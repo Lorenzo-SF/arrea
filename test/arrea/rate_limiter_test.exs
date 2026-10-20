@@ -3,6 +3,22 @@ defmodule Arrea.RateLimiterTest do
 
   alias Arrea.RateLimiter
 
+  test "el nombre no tiene que ser un atomo" do
+    # Las guardas `is_atom(name)` de este modulo restringian algo que la
+    # implementacion nunca tuvo: el nombre va en un `{:via, Registry, {_, name}}`
+    # y ahi cabe cualquier termino. Con la guarda, un string fallaba **en
+    # runtime**, no solo en dialyzer.
+    _ = start_supervised({Registry, keys: :unique, name: Arrea.RateLimiter.Registry})
+    _ = start_supervised({Registry, keys: :unique, name: Apero.RateLimit.Registry})
+
+    nombre = "limiter-con-string-#{System.unique_integer([:positive])}"
+
+    {:ok, _pid} = RateLimiter.start_link(nombre)
+
+    assert RateLimiter.check(nombre, 5) == :ok
+    assert RateLimiter.allow?(nombre, 1)
+  end
+
   setup do
     test_id = :rate_limiter_test
 

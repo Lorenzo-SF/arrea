@@ -61,8 +61,8 @@ defmodule Arrea.RateLimiter do
   Invalid options (`capacity < 1`, negative refill, unknown bucket) are
   rejected with `{:error, %Arrea.Error{code: :invalid_config}}`.
   """
-  @spec start_link(atom(), keyword()) :: GenServer.on_start()
-  def start_link(name, opts \\ []) when is_atom(name) do
+  @spec start_link(name(), keyword()) :: GenServer.on_start()
+  def start_link(name, opts \\ []) do
     case validate_opts([name: name] ++ opts) do
       :ok -> GenServer.start_link(__MODULE__, [name: name] ++ opts, name: via_tuple(name))
       {:error, %Arrea.Error{} = error} -> {:error, error}
@@ -82,8 +82,15 @@ defmodule Arrea.RateLimiter do
       iex> Arrea.RateLimiter.check(:api, 1)
       :ok
   """
-  @spec check(atom(), pos_integer()) :: :ok | {:error, :rate_limited | :apero_unavailable}
-  def check(name, n \\ 1) when is_atom(name) and is_integer(n) and n > 0 do
+  # El nombre va en un `{:via, Registry, {_, name}}`, y ahi cabe **cualquier
+  # termino**. Las guardas `is_atom(name)` que tenia este modulo ponian una
+  # restriccion que la implementacion nunca tubo, y lo unico que hacian era
+  # rechazar en runtime un nombre que habria funcionado. Ver tambien
+  # `Arrea.CircuitBreaker`, que tenia el mismo `@spec` equivocado.
+  @type name :: term()
+
+  @spec check(name(), pos_integer()) :: :ok | {:error, :rate_limited | :apero_unavailable}
+  def check(name, n \\ 1) when is_integer(n) and n > 0 do
     case safe_call(name, {:check, n}) do
       :not_found -> {:error, :limiter_not_found}
       result -> result
@@ -98,8 +105,8 @@ defmodule Arrea.RateLimiter do
       iex> Arrea.RateLimiter.allow?(:api, 1)
       true
   """
-  @spec allow?(atom(), pos_integer()) :: boolean()
-  def allow?(name, n \\ 1) when is_atom(name) and is_integer(n) and n > 0 do
+  @spec allow?(name(), pos_integer()) :: boolean()
+  def allow?(name, n \\ 1) when is_integer(n) and n > 0 do
     case safe_call(name, {:allow?, n}) do
       :not_found -> false
       result -> result
